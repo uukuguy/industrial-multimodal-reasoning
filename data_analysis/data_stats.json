@@ -1,0 +1,280 @@
+{
+  "total_questions": 300,
+  "unique_documents": 51,
+  "question_types": {
+    "位置关系": 87,
+    "功能描述": 60,
+    "技术参数": 5,
+    "结构组成": 109,
+    "操作步骤": 4,
+    "其他": 35
+  },
+  "group_distribution": {
+    "1": 102,
+    "2": 101,
+    "3": 97
+  },
+  "answer_distribution": {
+    "B": 125,
+    "C": 101,
+    "D": 31,
+    "A": 43
+  },
+  "document_stats": {
+    "CN213444549U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 426.9033203125,
+      "exists": true
+    },
+    "CN212643037U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 278.5205078125,
+      "exists": true
+    },
+    "CN212507478U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 295.7763671875,
+      "exists": true
+    },
+    "CN218108941U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 603.0595703125,
+      "exists": true
+    },
+    "CN102874588B.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 512.8603515625,
+      "exists": true
+    },
+    "CN202613717U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 181.4541015625,
+      "exists": true
+    },
+    "CN1071381C.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 439.51171875,
+      "exists": true
+    },
+    "CN201820326U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 373.3447265625,
+      "exists": true
+    },
+    "CN111964678B.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 1995.0400390625,
+      "exists": true
+    },
+    "CN216371815U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 311.0546875,
+      "exists": true
+    },
+    "CN212384434U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 413.5361328125,
+      "exists": true
+    },
+    "CN211674871U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 368.40234375,
+      "exists": true
+    },
+    "CN213794681U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 357.59375,
+      "exists": true
+    },
+    "CN214892742U.pdf": {
+      "questions_count": 5,
+      "file_size_kb": 503.89453125,
+      "exists": true
+    },
+    "CN103448299A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 447.0537109375,
+      "exists": true
+    },
+    "CN110864395A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 485.5634765625,
+      "exists": true
+    },
+    "CN212772760U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 262.8955078125,
+      "exists": true
+    },
+    "CN216346248U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 416.67578125,
+      "exists": true
+    },
+    "CN111408437B.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 576.427734375,
+      "exists": true
+    },
+    "CN211476607U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 482.6328125,
+      "exists": true
+    },
+    "CN213838924U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 264.1171875,
+      "exists": true
+    },
+    "CN2078861U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 127.25,
+      "exists": true
+    },
+    "CN103813555A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 630.943359375,
+      "exists": true
+    },
+    "CN212822463U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 596.158203125,
+      "exists": true
+    },
+    "CN201677068U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 412.6181640625,
+      "exists": true
+    },
+    "CN112593737A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 458.4658203125,
+      "exists": true
+    },
+    "CN217479855U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 298.47265625,
+      "exists": true
+    },
+    "CN112017362A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 200.66796875,
+      "exists": true
+    },
+    "CN202280858U.pdf": {
+      "questions_count": 5,
+      "file_size_kb": 247.349609375,
+      "exists": true
+    },
+    "CN215045900U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 580.9921875,
+      "exists": true
+    },
+    "CN101398011A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 621.5390625,
+      "exists": true
+    },
+    "CN213537655U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 348.142578125,
+      "exists": true
+    },
+    "CN213315909U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 454.1796875,
+      "exists": true
+    },
+    "CN202263810U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 204.15234375,
+      "exists": true
+    },
+    "CN215924291U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 321.9150390625,
+      "exists": true
+    },
+    "CN216803763U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 361.4365234375,
+      "exists": true
+    },
+    "CN217268780U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 218.76953125,
+      "exists": true
+    },
+    "CN100364694C.pdf": {
+      "questions_count": 5,
+      "file_size_kb": 977.845703125,
+      "exists": true
+    },
+    "CN213655898U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 277.962890625,
+      "exists": true
+    },
+    "CN103452849A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 1075.5146484375,
+      "exists": true
+    },
+    "CN111943458A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 209.525390625,
+      "exists": true
+    },
+    "CN213995317U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 443.40234375,
+      "exists": true
+    },
+    "CN101235824B.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 439.484375,
+      "exists": true
+    },
+    "CN216066104U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 179.6513671875,
+      "exists": true
+    },
+    "CN216281372U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 349.208984375,
+      "exists": true
+    },
+    "CN102788006A.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 573.14453125,
+      "exists": true
+    },
+    "CN101134389B.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 532.736328125,
+      "exists": true
+    },
+    "CN213681400U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 329.5654296875,
+      "exists": true
+    },
+    "CN213492225U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 324.7724609375,
+      "exists": true
+    },
+    "CN202612621U.pdf": {
+      "questions_count": 6,
+      "file_size_kb": 129.70703125,
+      "exists": true
+    },
+    "CN110758510A.pdf": {
+      "questions_count": 3,
+      "file_size_kb": 634.3798828125,
+      "exists": true
+    }
+  }
+}
