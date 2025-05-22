@@ -1,2 +1,2 @@
 train:
-	bash scripts/train_multi_gpu_yaml.sh
+	bash scripts/train_multi_gpu.sh

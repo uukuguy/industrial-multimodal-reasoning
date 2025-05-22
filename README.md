@@ -1298,3 +1298,44 @@ industrial-multimodal-reasoning/
 
 * 使用的预训练模型：BERT-base-Chinese, Vision Transformer
 * 使用的开源库：PyTorch, Transformers, LayoutParser, PaddleOCR
+
+## 训练配置
+
+### 推荐训练参数（4张A100-40G显卡）
+
+| 参数                | 推荐值         | 说明                                                                                   |
+|---------------------|---------------|--------------------------------------------------------------------------------------|
+| `training.batch_size`         | 16            | 单卡16，4卡总批量64，显存利用率约70-80%，适合A100-40G。                                |
+| `training.gradient_accumulation_steps` | 1     | A100显存充足，无需梯度累积，直接增大批量。                                            |
+| `training.num_epochs`         | 15            | 大批量下可适当增加轮数，防止欠拟合。                                                   |
+| `training.fp16`               | true          | 必须开启，提升训练速度和显存利用率。                                                   |
+| `optimizer.learning_rate` | 5e-5         | 大批量下可适当增大学习率，加速收敛。                                                   |
+| `optimizer.weight_decay`   | 0.01         | 保持不变，防止过拟合。                                                                |
+| `scheduler.warmup_ratio` | 0.1           | 保持不变，适合大批量训练。                                                            |
+| `validation_split_ratio` | 0.1           | 提升至10%，更利于泛化评估。                                                           |
+| `data_augmentation.augmentation_factor` | 2.0 | 显存充足，可适当增大增强比例。                                                        |
+| `data_augmentation.techniques` | ["synonym_replacement", "back_translation", "random_masking"] | 增加随机遮盖增强。 |
+
+### 显存占用估算
+
+- **单卡批量16**：约占用25-30GB显存（包含模型、优化器、梯度、激活值等）。
+- **4卡总批量64**：显存利用率约70-80%，剩余显存可用于数据增强和缓存。
+
+### 训练速度估算
+
+- **单卡**：约100-150样本/秒（取决于模型复杂度）。
+- **4卡**：约400-600样本/秒，训练速度提升3.5-4倍。
+
+### 注意事项
+
+1. **显存监控**：训练初期监控显存占用，确保未超出40GB。
+2. **梯度裁剪**：大批量训练时，建议添加梯度裁剪（如`max_grad_norm=1.0`）。
+3. **数据加载**：确保数据加载足够快，避免GPU等待CPU。
+4. **混合精度**：必须开启`fp16`，提升训练速度和显存利用率。
+5. **分布式训练**：确保`ddp`模式正确配置，避免单卡训练。
+
+### 可选优化
+
+1. **梯度检查点**：若显存紧张，可启用梯度检查点（`gradient_checkpointing=True`）。
+2. **动态批量化**：根据样本长度动态调整批量大小，进一步提升显存利用率。
+3. **数据预取**：使用`DataLoader`的`prefetch_factor`参数，提升数据加载效率。
