@@ -9,6 +9,7 @@ import numpy as np
 from tqdm import tqdm
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union
+from functools import wraps
 from transformers import Trainer, TrainingArguments
 
 # 导入优化策略模块
@@ -30,9 +31,28 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# 配置日志记录
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+def error_handler(func):
+    """错误处理装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {str(e)}", exc_info=True)
+            # 可以添加自定义的错误恢复逻辑
+            raise
+    return wrapper
+
 class EnhancedMultiModalTrainer(Trainer):
     """扩展transformers的Trainer类，支持多模态模型训练"""
     
+    @error_handler
     def __init__(self, 
                 model=None, 
                 args=None, 
@@ -67,57 +87,29 @@ class EnhancedMultiModalTrainer(Trainer):
             use_optimized_loss: 是否使用优化后的损失函数
             **kwargs: 传递给父类的其他参数
         """
+        logger.info("Initializing EnhancedMultiModalTrainer...")
+        
         # 如果未提供args，从config创建
         if args is None and config is not None:
+            logger.info("Creating TrainingArguments from config...")
             training_config = config.get('training', {})
             output_dir = output_dir or f'outputs/{datetime.now().strftime("%Y%m%d_%H%M%S")}'
             
-            args = TrainingArguments(
-                output_dir=output_dir,
-                num_train_epochs=training_config.get('num_epochs', 10),
-                per_device_train_batch_size=training_config.get('batch_size', 8),
-                per_device_eval_batch_size=training_config.get('batch_size', 8),
-                learning_rate=training_config.get('optimizer', {}).get('learning_rate', 1e-4),
-                weight_decay=training_config.get('optimizer', {}).get('weight_decay', 0.01),
-                warmup_ratio=training_config.get('scheduler', {}).get('warmup_ratio', 0.1),
-                logging_dir=os.path.join(output_dir, 'logs'),
-                logging_steps=50,
-                save_strategy="epoch",
-                evaluation_strategy="epoch" if eval_dataset is not None else "no",
-                load_best_model_at_end=True if eval_dataset is not None else False,
-                save_total_limit=3,
-                report_to=config.get('training', {}).get('report_to', ["tensorboard"]),
-                # 分布式训练支持
-                local_rank=kwargs.pop('local_rank', -1),
-                ddp_find_unused_parameters=False,
-                **kwargs.pop('training_args', {})
-            )
-        
+            args = self._create_training_args(training_config, output_dir, eval_dataset, kwargs)
+            
         # 保存配置
         self.config = config
         if config is not None and output_dir is not None:
-            os.makedirs(output_dir, exist_ok=True)
-            config_path = os.path.join(output_dir, 'config.json')
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, ensure_ascii=False, indent=2)
-            logger.info(f"配置已保存到: {config_path}")
+            self._save_config(config, output_dir)
         
         # 存储是否使用优化损失的标志
         self.use_optimized_loss = use_optimized_loss
         
         # 应用数据增强
-        self.use_data_augmentation = use_data_augmentation and HAS_DATA_AUG
-        self.data_augmentation_config = data_augmentation_config or {}
-        
-        if self.use_data_augmentation and train_dataset is not None:
-            train_dataset = self._apply_data_augmentation(train_dataset)
+        self._setup_data_augmentation(use_data_augmentation, data_augmentation_config, train_dataset)
         
         # 应用PEFT
-        self.use_peft = use_peft and HAS_PEFT
-        self.peft_config = peft_config or {}
-        
-        if self.use_peft and model is not None:
-            model = self._apply_peft(model)
+        self._setup_peft(use_peft, peft_config, model)
             
         super().__init__(
             model=model,
@@ -128,7 +120,75 @@ class EnhancedMultiModalTrainer(Trainer):
             tokenizer=tokenizer,
             **kwargs
         )
-    
+        logger.info("EnhancedMultiModalTrainer initialized successfully")
+
+    @error_handler
+    def _create_training_args(self, training_config: Dict, output_dir: str, 
+                            eval_dataset: Optional[Any], kwargs: Dict) -> TrainingArguments:
+        """创建训练参数"""
+        args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=training_config.get('num_epochs', 10),
+            per_device_train_batch_size=training_config.get('batch_size', 8),
+            per_device_eval_batch_size=training_config.get('batch_size', 8),
+            learning_rate=training_config.get('optimizer', {}).get('learning_rate', 1e-4),
+            weight_decay=training_config.get('optimizer', {}).get('weight_decay', 0.01),
+            warmup_ratio=training_config.get('scheduler', {}).get('warmup_ratio', 0.1),
+            logging_dir=os.path.join(output_dir, 'logs'),
+            report_to=training_config.get('report_to', ["tensorboard"]),
+            ddp_find_unused_parameters=False,
+            evaluation_strategy=training_config.get('evaluation', {}).get('strategy', 
+                "epoch" if eval_dataset is not None else "no"),
+            save_strategy=training_config.get('checkpoint', {}).get('save_strategy', "epoch"),
+            save_steps=training_config.get('checkpoint', {}).get('save_steps', 500),
+            save_total_limit=training_config.get('checkpoint', {}).get('save_total_limit', 3),
+            load_best_model_at_end=training_config.get('checkpoint', {}).get('load_best_model_at_end', 
+                True if eval_dataset is not None else False),
+            logging_steps=training_config.get('logging', {}).get('steps', 50),
+            **kwargs.pop('training_args', {})
+        )
+        
+        # 检查配置兼容性
+        if args.load_best_model_at_end and args.evaluation_strategy == "no":
+            logger.warning("load_best_model_at_end requires evaluation_strategy to be non-'no'. "
+                         "Setting load_best_model_at_end to False.")
+            args.load_best_model_at_end = False
+            
+        return args
+
+    @error_handler
+    def _save_config(self, config: Dict, output_dir: str) -> None:
+        """保存配置到文件"""
+        os.makedirs(output_dir, exist_ok=True)
+        config_path = os.path.join(output_dir, 'config.json')
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        logger.info(f"Configuration saved to: {config_path}")
+
+    @error_handler
+    def _setup_data_augmentation(self, use_data_augmentation: bool, 
+                               data_augmentation_config: Optional[Dict], 
+                               train_dataset: Optional[Any]) -> None:
+        """设置数据增强"""
+        self.use_data_augmentation = use_data_augmentation and HAS_DATA_AUG
+        self.data_augmentation_config = data_augmentation_config or {}
+        
+        if self.use_data_augmentation and train_dataset is not None:
+            logger.info("Applying data augmentation...")
+            train_dataset = self._apply_data_augmentation(train_dataset)
+            logger.info(f"Data augmentation completed. Dataset size: {len(train_dataset)}")
+
+    @error_handler
+    def _setup_peft(self, use_peft: bool, peft_config: Optional[Dict], model: Optional[Any]) -> None:
+        """设置PEFT"""
+        self.use_peft = use_peft and HAS_PEFT
+        self.peft_config = peft_config or {}
+        
+        if self.use_peft and model is not None:
+            logger.info("Applying PEFT...")
+            model = self._apply_peft(model)
+            logger.info("PEFT applied successfully")
+
     def _apply_data_augmentation(self, dataset):
         """应用数据增强策略"""
         logger.info("应用数据增强...")

@@ -4,11 +4,103 @@ import os
 import torch
 import torch.nn as nn
 import logging
+import time
 from typing import Dict, Any, Optional, Union, List, Tuple
+from functools import wraps
 
 from .uncertainty_estimator import UncertaintyEstimator, OptionSelector
+from .optimization import ModelOptimizer, OptimizationConfig, AttentionOptimizationConfig
 
+# 配置日志记录
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+def performance_monitor(func):
+    """性能监控装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        start_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+        
+        try:
+            result = func(*args, **kwargs)
+            
+            end_time = time.time()
+            end_memory = torch.cuda.memory_allocated() if torch.cuda.is_available() else 0
+            
+            execution_time = end_time - start_time
+            memory_used = (end_memory - start_memory) / 1024 / 1024  # MB
+            
+            logger.info(f"Performance metrics for {func.__name__}:")
+            logger.info(f"  - Execution time: {execution_time:.2f} seconds")
+            logger.info(f"  - Memory usage: {memory_used:.2f} MB")
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {str(e)}", exc_info=True)
+            raise
+    return wrapper
+
+def error_handler(func):
+    """错误处理装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {func.__name__}: {str(e)}", exc_info=True)
+            raise
+    return wrapper
+
+class ModelFactory:
+    """模型工厂类，负责模型的加载和初始化"""
+    
+    @staticmethod
+    @error_handler
+    @performance_monitor
+    def load_model(model_path: str, optimization_config: Optional[OptimizationConfig] = None) -> Tuple[Any, Any]:
+        """
+        加载模型和分词器
+        
+        Args:
+            model_path: 模型路径或名称
+            optimization_config: 优化配置
+            
+        Returns:
+            Tuple[model, tokenizer]: 加载的模型和分词器
+        """
+        logger.info(f"Loading model from: {model_path}")
+        
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            
+            # 创建优化器
+            if optimization_config is None:
+                optimization_config = OptimizationConfig(
+                    use_quantization=True,
+                    quantization_bits=8,
+                    use_cache=True,
+                    use_mixed_precision=True
+                )
+            optimizer = ModelOptimizer(optimization_config)
+            
+            # 加载并优化模型
+            model = optimizer.load_model(model_path)
+            
+            # 加载分词器
+            tokenizer = AutoTokenizer.from_pretrained(model_path)
+            
+            return model, tokenizer
+            
+        except ImportError:
+            logger.error("Failed to import transformers library")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load model: {str(e)}")
+            raise
 
 class ReasoningQAModule(nn.Module):
     """
@@ -16,8 +108,11 @@ class ReasoningQAModule(nn.Module):
     支持初赛（选择题）和复赛（开放题）
     """
     
+    @error_handler
+    @performance_monitor
     def __init__(self, lmm_model_name: str, embedding_dim: int = 512, 
-                temperature: float = 1.0, confidence_threshold: float = 0.7):
+                temperature: float = 1.0, confidence_threshold: float = 0.7,
+                optimization_config: Optional[OptimizationConfig] = None):
         """
         初始化推理与问答模块
         
@@ -26,6 +121,7 @@ class ReasoningQAModule(nn.Module):
             embedding_dim: 嵌入维度
             temperature: 温度参数，影响输出的多样性
             confidence_threshold: 置信度阈值，低于此值的预测会被标记为不确定
+            optimization_config: 优化配置
         """
         super().__init__()
         self.lmm_model_name = lmm_model_name
@@ -33,125 +129,61 @@ class ReasoningQAModule(nn.Module):
         self.temperature = temperature
         self.confidence_threshold = confidence_threshold
         
-        try:
-            # 尝试加载大型多模态模型
-            logger.info(f"正在加载大型多模态模型: {lmm_model_name}")
-            
-            # 检查模型路径是否存在
-            if os.path.exists(lmm_model_name):
-                # 本地模型路径
-                self._load_local_model(lmm_model_name)
-            else:
-                # 预训练模型名称
-                self._load_pretrained_model(lmm_model_name)
-            
-            # 创建不确定性估计器 - 用于初赛（ABCD选择题）
-            self.uncertainty_estimator = UncertaintyEstimator(
-                embedding_dim=embedding_dim,
-                num_classes=4,  # A, B, C, D
-                temperature=temperature
+        # 设置默认的注意力优化配置
+        if optimization_config is None:
+            optimization_config = OptimizationConfig(
+                use_quantization=True,
+                quantization_bits=8,
+                use_cache=True,
+                use_mixed_precision=True,
+                attention_optimization=AttentionOptimizationConfig(
+                    use_sparse_attention=True,
+                    sparse_attention_threshold=0.1,
+                    use_head_pruning=True,
+                    head_pruning_ratio=0.3,
+                    use_attention_cache=True,
+                    use_flash_attention=True,
+                    use_sliding_window=True,
+                    window_size=512
+                )
             )
-            
-            # 添加分类头 - 用于初赛
-            self.classification_head = nn.Sequential(
-                nn.Linear(embedding_dim, embedding_dim),
-                nn.LayerNorm(embedding_dim),
-                nn.ReLU(),
-                nn.Linear(embedding_dim, 4)  # 4个选项 A, B, C, D
-            )
-            
-            # 添加文本生成投影层 - 用于复赛
-            self.text_generation_projection = nn.Linear(embedding_dim, embedding_dim)
-            
-        except Exception as e:
-            logger.error(f"初始化推理与问答模块失败: {e}")
-            self.lmm_model = None
-            self.lmm_initialized = False
-    
-    def _load_local_model(self, model_path: str) -> None:
-        """
-        从本地路径加载模型
         
-        Args:
-            model_path: 模型路径
-        """
+        # 加载模型
         try:
-            # 尝试使用torch.load加载模型
-            if os.path.isfile(model_path):
-                # 单个模型文件
-                self.lmm_model = torch.load(model_path, map_location=torch.device('cpu'))
-                self.lmm_initialized = True
-                logger.info(f"成功从文件加载模型: {model_path}")
-            elif os.path.isdir(model_path):
-                # 模型目录，尝试使用transformers加载
-                try:
-                    from transformers import AutoModelForCausalLM, AutoTokenizer
-                    
-                    # 加载分词器
-                    self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-                    
-                    # 加载模型
-                    self.lmm_model = AutoModelForCausalLM.from_pretrained(
-                        model_path,
-                        torch_dtype=torch.float16,  # 使用半精度加速
-                        device_map="auto"  # 自动分配到可用设备
-                    )
-                    
-                    self.lmm_initialized = True
-                    logger.info(f"成功使用transformers从目录加载模型: {model_path}")
-                except ImportError:
-                    logger.warning("未安装transformers库，无法加载预训练模型")
-                    self._fallback_to_placeholder()
-                except Exception as e:
-                    logger.error(f"使用transformers加载模型失败: {e}")
-                    self._fallback_to_placeholder()
-            else:
-                logger.error(f"模型路径无效: {model_path}")
-                self._fallback_to_placeholder()
-        except Exception as e:
-            logger.error(f"加载本地模型失败: {e}")
-            self._fallback_to_placeholder()
-    
-    def _load_pretrained_model(self, model_name: str) -> None:
-        """
-        从预训练模型库加载模型
-        
-        Args:
-            model_name: 模型名称
-        """
-        try:
-            # 尝试使用transformers加载预训练模型
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-            
-            # 加载分词器
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            
-            # 加载模型
-            self.lmm_model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float16,  # 使用半精度加速
-                device_map="auto"  # 自动分配到可用设备
+            self.lmm_model, self.tokenizer = ModelFactory.load_model(
+                lmm_model_name,
+                optimization_config
             )
-            
             self.lmm_initialized = True
-            logger.info(f"成功加载预训练模型: {model_name}")
-        except ImportError:
-            logger.warning("未安装transformers库，无法加载预训练模型")
-            self._fallback_to_placeholder()
         except Exception as e:
-            logger.error(f"加载预训练模型失败: {e}")
-            self._fallback_to_placeholder()
-    
-    def _fallback_to_placeholder(self) -> None:
-        """回退到占位符实现"""
-        self.lmm_model = None
-        self.lmm_initialized = False
-        logger.warning("使用占位符实现")
-    
-    def is_initialized(self) -> bool:
-        """检查模块是否成功初始化"""
-        return self.lmm_initialized or hasattr(self, 'classification_head')
-    
+            logger.error(f"Failed to initialize model: {str(e)}")
+            self.lmm_model = None
+            self.tokenizer = None
+            self.lmm_initialized = False
+            return
+        
+        # 创建不确定性估计器
+        self.uncertainty_estimator = UncertaintyEstimator(
+            embedding_dim=embedding_dim,
+            num_classes=4,  # A, B, C, D
+            temperature=temperature
+        )
+        
+        # 添加分类头
+        self.classification_head = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.LayerNorm(embedding_dim),
+            nn.ReLU(),
+            nn.Linear(embedding_dim, 4)  # 4个选项 A, B, C, D
+        )
+        
+        # 添加文本生成投影层
+        self.text_generation_projection = nn.Linear(embedding_dim, embedding_dim)
+        
+        logger.info("ReasoningQAModule initialized successfully")
+
+    @error_handler
+    @performance_monitor
     def preprocess_question(self, question: str) -> str:
         """
         预处理问题文本
@@ -170,7 +202,9 @@ class ReasoningQAModule(nn.Module):
             question = f"根据文档内容，{question}"
             
         return question
-    
+
+    @error_handler
+    @performance_monitor
     def postprocess_answer(self, answer: str, options: Optional[List[str]] = None) -> str:
         """
         后处理答案文本
@@ -187,11 +221,16 @@ class ReasoningQAModule(nn.Module):
         
         # 如果是选择题，确保答案是选项之一
         if options and len(options) > 0:
-            # 使用选项选择器
             return OptionSelector.select_option(answer, options)
         
         return answer
+
+    def is_initialized(self) -> bool:
+        """检查模块是否成功初始化"""
+        return self.lmm_initialized or hasattr(self, 'classification_head')
     
+    @error_handler
+    @performance_monitor
     def answer_classification_question(self, 
                                       document_embedding: torch.Tensor, 
                                       question: str,
@@ -240,6 +279,8 @@ class ReasoningQAModule(nn.Module):
             'probabilities': {opt: probs[0, i].item() for i, opt in enumerate(options) if i < len(probs[0])}
         }
     
+    @error_handler
+    @performance_monitor
     def answer_open_question(self, 
                            document_embedding: torch.Tensor, 
                            question: str) -> Dict[str, Any]:
@@ -275,6 +316,8 @@ class ReasoningQAModule(nn.Module):
             'method': 'placeholder',
         }
     
+    @error_handler
+    @performance_monitor
     def _generate_with_lmm(self, 
                           document_embedding: torch.Tensor, 
                           question: str,
@@ -368,6 +411,8 @@ class ReasoningQAModule(nn.Module):
             'method': 'lmm_generation',
         }
     
+    @error_handler
+    @performance_monitor
     def answer_question(self, 
                        document_embedding: torch.Tensor, 
                        question: str,
@@ -422,7 +467,8 @@ class EnhancedReasoningQAModule(ReasoningQAModule):
     
     def __init__(self, lmm_model_name: str, embedding_dim: int = 512, 
                 temperature: float = 1.0, confidence_threshold: float = 0.7,
-                max_answer_length: int = 100, top_k: int = 5):
+                max_answer_length: int = 100, top_k: int = 5,
+                optimization_config: Optional[OptimizationConfig] = None):
         """
         初始化增强型推理与问答模块
         
@@ -433,8 +479,15 @@ class EnhancedReasoningQAModule(ReasoningQAModule):
             confidence_threshold: 置信度阈值
             max_answer_length: 最大答案长度
             top_k: 生成时的top-k采样参数
+            optimization_config: 优化配置
         """
-        super().__init__(lmm_model_name, embedding_dim, temperature, confidence_threshold)
+        super().__init__(
+            lmm_model_name=lmm_model_name,
+            embedding_dim=embedding_dim,
+            temperature=temperature,
+            confidence_threshold=confidence_threshold,
+            optimization_config=optimization_config
+        )
         self.max_answer_length = max_answer_length
         self.top_k = top_k
         
@@ -515,6 +568,8 @@ class EnhancedReasoningQAModule(ReasoningQAModule):
             'method': 'standard'
         }
     
+    @error_handler
+    @performance_monitor
     def answer_question(self, 
                        document_embedding: torch.Tensor, 
                        question: str,
@@ -555,8 +610,30 @@ if __name__ == "__main__":
     batch_size = 1
     document_embedding = torch.randn(batch_size, embedding_dim)
     
+    # 创建优化配置
+    optimization_config = OptimizationConfig(
+        use_quantization=True,
+        quantization_bits=8,
+        use_cache=True,
+        use_mixed_precision=True,
+        attention_optimization=AttentionOptimizationConfig(
+            use_sparse_attention=True,
+            sparse_attention_threshold=0.1,
+            use_head_pruning=True,
+            head_pruning_ratio=0.3,
+            use_attention_cache=True,
+            use_flash_attention=True,
+            use_sliding_window=True,
+            window_size=512
+        )
+    )
+    
     # 初始化QA模块
-    qa_module = ReasoningQAModule(lmm_model_name="placeholder/lmm-model", embedding_dim=embedding_dim)
+    qa_module = ReasoningQAModule(
+        lmm_model_name="placeholder/lmm-model",
+        embedding_dim=embedding_dim,
+        optimization_config=optimization_config
+    )
     
     # 测试选择题（初赛）
     question = "根据文本信息，以下哪个描述符合该静电除尘器的特征？"
@@ -578,7 +655,11 @@ if __name__ == "__main__":
     
     # 测试增强型QA模块
     print("\n测试增强型问答模块...")
-    enhanced_qa = EnhancedReasoningQAModule(lmm_model_name="placeholder/lmm-model", embedding_dim=embedding_dim)
+    enhanced_qa = EnhancedReasoningQAModule(
+        lmm_model_name="placeholder/lmm-model",
+        embedding_dim=embedding_dim,
+        optimization_config=optimization_config
+    )
     
     enhanced_answer = enhanced_qa.answer_question(document_embedding, question, [opt[0] for opt in options])
     print(f"增强型答案: {enhanced_answer}")

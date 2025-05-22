@@ -20,13 +20,18 @@ from tqdm import tqdm
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler, autocast
+from model.optimization import (
+    ComputationOptimizationConfig,
+    MemoryOptimizationConfig
+)
+from model.enhanced_model import EnhancedMultiModalModel
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # 导入模型包
 from model import (
-    EnhancedMultiModalModel, 
     load_config, 
     save_config, 
     init_config,
@@ -326,6 +331,176 @@ def update_config_from_args(config: Dict[str, Any], args: argparse.Namespace, re
             config['loss'] = {}
         config['loss']['use_optimized_loss'] = True
 
+class ModelTrainer:
+    def __init__(
+        self,
+        model: EnhancedMultiModalModel,
+        train_loader: DataLoader,
+        val_loader: Optional[DataLoader] = None,
+        computation_config: Optional[ComputationOptimizationConfig] = None,
+        memory_config: Optional[MemoryOptimizationConfig] = None
+    ):
+        self.model = model
+        self.train_loader = train_loader
+        self.val_loader = val_loader
+        
+        # 初始化优化配置
+        self.computation_config = computation_config or ComputationOptimizationConfig()
+        self.memory_config = memory_config or MemoryOptimizationConfig()
+        
+        # 初始化优化器
+        self.optimizer = self._init_optimizer()
+        self.scaler = GradScaler()
+        
+        # 性能监控
+        self.throughput_history = []
+        self.latency_history = []
+        
+    def _init_optimizer(self):
+        """初始化优化器"""
+        return torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.model.config.get('learning_rate', 1e-4),
+            weight_decay=self.model.config.get('weight_decay', 0.01)
+        )
+        
+    def train_epoch(self, epoch: int):
+        """训练一个epoch"""
+        self.model.train()
+        total_loss = 0
+        batch_count = 0
+        
+        for batch_idx, batch in enumerate(self.train_loader):
+            # 1. 准备数据
+            batch = self._prepare_batch(batch)
+            
+            # 2. 前向传播
+            with autocast():
+                loss = self._forward_pass(batch)
+                
+            # 3. 反向传播
+            self._backward_pass(loss)
+            
+            # 4. 更新统计信息
+            total_loss += loss.item()
+            batch_count += 1
+            
+            # 5. 优化批处理大小
+            if batch_count % 10 == 0:
+                self._optimize_batch_size()
+                
+            # 6. 清理内存
+            if batch_count % self.memory_config.clear_cache_frequency == 0:
+                self.model.clear_memory()
+                
+        return total_loss / batch_count
+        
+    def _prepare_batch(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        """准备批次数据"""
+        return {k: v.to(self.model.device) for k, v in batch.items()}
+        
+    def _forward_pass(self, batch: Dict[str, Any]) -> torch.Tensor:
+        """前向传播"""
+        start_time = torch.cuda.Event(enable_timing=True)
+        end_time = torch.cuda.Event(enable_timing=True)
+        
+        start_time.record()
+        outputs = self.model(**batch)
+        end_time.record()
+        
+        # 记录延迟
+        torch.cuda.synchronize()
+        latency = start_time.elapsed_time(end_time)
+        self.latency_history.append(latency)
+        
+        return outputs['loss']
+        
+    def _backward_pass(self, loss: torch.Tensor):
+        """反向传播"""
+        self.optimizer.zero_grad()
+        self.scaler.scale(loss).backward()
+        self.scaler.step(self.optimizer)
+        self.scaler.update()
+        
+    def _optimize_batch_size(self):
+        """优化批处理大小"""
+        if len(self.throughput_history) > 0 and len(self.latency_history) > 0:
+            # 计算平均吞吐量和延迟
+            avg_throughput = sum(self.throughput_history[-10:]) / min(10, len(self.throughput_history))
+            avg_latency = sum(self.latency_history[-10:]) / min(10, len(self.latency_history))
+            
+            # 优化批处理大小
+            new_batch_size = self.model.optimize_batch_size(avg_throughput, avg_latency)
+            
+            # 更新数据加载器
+            if new_batch_size != self.train_loader.batch_size:
+                self._update_dataloader(new_batch_size)
+                
+    def _update_dataloader(self, new_batch_size: int):
+        """更新数据加载器的批处理大小"""
+        self.train_loader = DataLoader(
+            self.train_loader.dataset,
+            batch_size=new_batch_size,
+            shuffle=True,
+            num_workers=self.train_loader.num_workers,
+            pin_memory=self.train_loader.pin_memory
+        )
+        
+    def validate(self) -> float:
+        """验证模型"""
+        if not self.val_loader:
+            return 0.0
+            
+        self.model.eval()
+        total_loss = 0
+        batch_count = 0
+        
+        with torch.no_grad():
+            for batch in self.val_loader:
+                batch = self._prepare_batch(batch)
+                with autocast():
+                    loss = self._forward_pass(batch)
+                total_loss += loss.item()
+                batch_count += 1
+                
+        return total_loss / batch_count
+
+def train_model(
+    model: EnhancedMultiModalModel,
+    train_loader: DataLoader,
+    val_loader: Optional[DataLoader] = None,
+    num_epochs: int = 10,
+    computation_config: Optional[ComputationOptimizationConfig] = None,
+    memory_config: Optional[MemoryOptimizationConfig] = None
+):
+    """训练模型"""
+    trainer = ModelTrainer(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        computation_config=computation_config,
+        memory_config=memory_config
+    )
+    
+    best_val_loss = float('inf')
+    
+    for epoch in range(num_epochs):
+        # 训练
+        train_loss = trainer.train_epoch(epoch)
+        logger.info(f"Epoch {epoch + 1}/{num_epochs}, Train Loss: {train_loss:.4f}")
+        
+        # 验证
+        if val_loader:
+            val_loss = trainer.validate()
+            logger.info(f"Epoch {epoch + 1}/{num_epochs}, Val Loss: {val_loss:.4f}")
+            
+            # 保存最佳模型
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                model.save("best_model.pt")
+                
+    return model
+
 def main():
     """主函数"""
     # 配置命令行参数解析
@@ -444,8 +619,8 @@ def main():
         parser.error("当使用--predict_only且提供测试集时，必须指定--output_file")
     
     # 确保必要的参数存在
-    if (args.train_questions or args.test_questions) and not args.documents:
-        parser.error("必须指定--documents参数或在配置文件中提供documents_dir")
+    # if (args.train_questions or args.test_questions) and not args.documents:
+    #     parser.error("必须指定--documents参数或在配置文件的data部分中提供documents_dir参数")
     
     # 配置wandb
     if args.use_wandb:
@@ -491,73 +666,55 @@ def main():
         logger.info("创建新模型")
         model = EnhancedMultiModalModel(**config)
     
-    # 创建训练参数，优先使用配置文件中的值
-    training_config = config.get('training', {})
-    training_args = {
-        "fp16": training_config.get('fp16', args.fp16),
-        "dataloader_num_workers": args.workers,  # 工作进程数通常由系统环境决定，保留命令行参数
-        "gradient_accumulation_steps": training_config.get('gradient_accumulation_steps', args.gradient_accumulation_steps),
-        "logging_steps": training_config.get('logging', {}).get('steps', args.logging_steps),
-        "save_total_limit": training_config.get('checkpoint', {}).get('save_total_limit', args.save_total_limit),
-        "load_best_model_at_end": training_config.get('checkpoint', {}).get('load_best_model_at_end', args.load_best_model_at_end),
-    }
+    # 创建数据加载器
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=args.workers,
+        pin_memory=True
+    )
+    val_loader = DataLoader(
+        valid_dataset,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
+        pin_memory=True
+    )
     
-    # 添加分布式训练参数
-    if args.local_rank != -1 or args.ddp:
-        logger.info("启用分布式训练")
-        training_args["local_rank"] = args.local_rank
-        training_args["ddp_backend"] = "nccl"  # GPU训练使用nccl后端
-    
-    # 创建训练器
-    trainer = create_trainer(
+    # 训练模型
+    model = train_model(
         model=model,
-        config=config,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        output_dir=args.output_dir,
-        data_collator=data_collator,
-        # 使用配置文件中的值，如果不存在则使用命令行参数
-        use_peft=config.get('peft', {}).get('use_peft', args.use_peft),
-        peft_config=config.get('peft'),
-        use_data_augmentation=config.get('data_augmentation', {}).get('use_data_augmentation', args.use_data_augmentation),
-        data_augmentation_config=config.get('data_augmentation'),
-        use_optimized_loss=config.get('loss', {}).get('use_optimized_loss', args.use_optimized_loss),
-        training_args=training_args
+        train_loader=train_loader,
+        val_loader=val_loader,
+        num_epochs=args.epochs
     )
     
     # 训练模型或预测
-    if not args.predict_only and train_dataset:
-        # 训练模型
+    if not args.predict_only:
         logger.info("开始训练模型")
-        train_result = trainer.train(resume_from_checkpoint=args.resume)
-        trainer.save_model()
-        
-        # 保存训练结果
-        metrics = train_result.metrics
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
+        train_result = model.train()
+        model.save()
         
         logger.info(f"训练完成，模型保存到: {args.output_dir}")
         
         # 最终评估
         if valid_dataset:
             logger.info("进行最终评估")
-            metrics = trainer.evaluate()
-            trainer.log_metrics("eval", metrics)
-            trainer.save_metrics("eval", metrics)
+            metrics = model.evaluate()
+            model.log_metrics("eval", metrics)
+            model.save_metrics("eval", metrics)
     
     # 如果提供测试集，进行预测
     if test_dataset:
         logger.info("开始预测")
-        predictions = trainer.predict(test_dataset)
+        predictions = model.predict(test_dataset)
         
         # 如果指定了输出文件，保存预测结果
         if args.output_file:
-            trainer.save_predictions(predictions, args.output_file)
+            model.save_predictions(predictions, args.output_file)
         else:
             output_file = os.path.join(args.output_dir, "predictions.jsonl")
-            trainer.save_predictions(predictions, output_file)
+            model.save_predictions(predictions, output_file)
 
 if __name__ == "__main__":
     main()

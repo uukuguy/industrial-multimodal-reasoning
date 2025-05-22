@@ -140,3 +140,12 @@ system:
   log_level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
   seed: 42  # 全局随机种子
   deterministic: true  # 是否确保确定性行为
+
+# 数据路径配置
+data:
+  train_questions: null  # 训练集问题JSONL文件路径
+  valid_questions: null  # 验证集问题JSONL文件路径
+  test_questions: null   # 测试集问题JSONL文件路径
+  documents_dir: null    # 文档目录路径
+  processed_data_dir: null  # 预处理数据目录路径
+  output_dir: "outputs"  # 输出目录

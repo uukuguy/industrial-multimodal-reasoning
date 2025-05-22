@@ -16,11 +16,27 @@ YAML配置文件包含以下主要部分：
 8. **数据集划分配置** (`dataset_split`): 训练集和验证集划分参数
 9. **损失函数配置** (`loss`): 自定义损失函数设置
 10. **系统配置** (`system`): 系统级参数如日志级别和随机种子
-11. **数据路径配置** (`data`): 数据文件和目录路径
+11. **数据路径配置** (`data`): 数据文件和目录路径，包括训练集、验证集、测试集文件路径和文档目录路径
 
 ## 示例配置文件
 
 完整的配置文件示例位于 `config/training_config.yaml`，包含所有可配置参数及其默认值。
+
+### 数据路径配置
+
+数据路径配置在 `data` 部分中指定，包括：
+
+```yaml
+data:
+  train_questions: "data/raw_data/train/questions.jsonl"  # 训练集问题文件路径
+  valid_questions: "data/raw_data/valid/questions.jsonl"  # 验证集问题文件路径（可选）
+  test_questions: "data/raw_data/test/questions.jsonl"    # 测试集问题文件路径（可选）
+  documents_dir: "data/raw_data/train/documents"          # 文档目录路径（必需）
+  processed_data_dir: "data/processed"                    # 预处理数据目录（可选）
+  output_dir: "outputs"                                   # 输出目录
+```
+
+**注意**：当使用YAML配置文件时，必须在 `data` 部分中提供 `documents_dir` 参数，或者在命令行中使用 `--documents` 参数指定文档目录路径。
 
 ## 使用配置文件
 

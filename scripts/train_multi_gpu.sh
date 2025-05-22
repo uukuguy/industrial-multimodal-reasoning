@@ -5,7 +5,11 @@
 # =============================================================================
 
 # 设置环境变量
-export PYTHONPATH=$(pwd):$PYTHONPATH
+export CUDA_VISIBLE_DEVICES=0,1,2,3  # 使用4个GPU
+export OMP_NUM_THREADS=1
+export NCCL_DEBUG=INFO
+export NCCL_IB_DISABLE=0
+export NCCL_SOCKET_IFNAME=ib0
 
 # 基本配置参数
 TRAIN_DATA="data/raw_data/train/questions.jsonl"
@@ -40,14 +44,39 @@ BATCH_SIZE_PER_GPU=6
 GRAD_ACCUM_STEPS=2
 
 # 训练超参数
-LEARNING_RATE=3e-5  # 多GPU时可以适当增大学习率
+LEARNING_RATE=1e-4
 NUM_EPOCHS=10
+WEIGHT_DECAY=0.01
+GRADIENT_ACCUMULATION_STEPS=1
+SAVE_STEPS=1000
+LOGGING_STEPS=100
+WARMUP_STEPS=1000
+MAX_STEPS=100000
 
 echo "每个GPU的批量大小: ${BATCH_SIZE_PER_GPU}" | tee -a ${OUTPUT_DIR}/training.log
 echo "梯度累积步数: ${GRAD_ACCUM_STEPS}" | tee -a ${OUTPUT_DIR}/training.log
 echo "有效总批量大小: $((BATCH_SIZE_PER_GPU * NUM_GPUS * GRAD_ACCUM_STEPS))" | tee -a ${OUTPUT_DIR}/training.log
 echo "学习率: ${LEARNING_RATE}" | tee -a ${OUTPUT_DIR}/training.log
 echo "训练轮数: ${NUM_EPOCHS}" | tee -a ${OUTPUT_DIR}/training.log
+echo "权重衰减: ${WEIGHT_DECAY}" | tee -a ${OUTPUT_DIR}/training.log
+echo "保存步数: ${SAVE_STEPS}" | tee -a ${OUTPUT_DIR}/training.log
+echo "日志步数: ${LOGGING_STEPS}" | tee -a ${OUTPUT_DIR}/training.log
+echo "预热步数: ${WARMUP_STEPS}" | tee -a ${OUTPUT_DIR}/training.log
+echo "最大步数: ${MAX_STEPS}" | tee -a ${OUTPUT_DIR}/training.log
+
+# 优化配置
+USE_FLASH_ATTENTION=true
+USE_MODEL_COMPILATION=true
+USE_DYNAMIC_BATCHING=true
+USE_MIXED_PRECISION=true
+USE_GRADIENT_CHECKPOINTING=true
+USE_QUANTIZATION=true
+QUANTIZATION_BITS=8
+USE_ATTENTION_CACHE=true
+USE_SLIDING_WINDOW=true
+WINDOW_SIZE=512
+MAX_MEMORY_USAGE=0.9
+CLEAR_CACHE_FREQUENCY=100
 
 # 使用 torch.distributed.launch 启动分布式训练
 python -m torch.distributed.launch \
@@ -70,11 +99,26 @@ python -m torch.distributed.launch \
     --use_optimized_loss \
     --gradient_accumulation_steps ${GRAD_ACCUM_STEPS} \
     --learning_rate ${LEARNING_RATE} \
-    --weight_decay 0.01 \
+    --weight_decay ${WEIGHT_DECAY} \
     --warmup_ratio 0.1 \
-    --logging_steps 10 \
+    --logging_steps ${LOGGING_STEPS} \
     --save_total_limit 3 \
-    --load_best_model_at_end | tee -a ${OUTPUT_DIR}/training.log
+    --load_best_model_at_end \
+    --use_flash_attention ${USE_FLASH_ATTENTION} \
+    --use_model_compilation ${USE_MODEL_COMPILATION} \
+    --use_dynamic_batching ${USE_DYNAMIC_BATCHING} \
+    --use_mixed_precision ${USE_MIXED_PRECISION} \
+    --use_gradient_checkpointing ${USE_GRADIENT_CHECKPOINTING} \
+    --use_quantization ${USE_QUANTIZATION} \
+    --quantization_bits ${QUANTIZATION_BITS} \
+    --use_attention_cache ${USE_ATTENTION_CACHE} \
+    --use_sliding_window ${USE_SLIDING_WINDOW} \
+    --window_size ${WINDOW_SIZE} \
+    --max_memory_usage ${MAX_MEMORY_USAGE} \
+    --clear_cache_frequency ${CLEAR_CACHE_FREQUENCY} \
+    --max_steps ${MAX_STEPS} \
+    --num_workers ${NUM_GPUS} \
+    --local_rank $LOCAL_RANK | tee -a ${OUTPUT_DIR}/training.log
 
 # 训练完成后评估性能 (评估只需要单进程)
 echo "训练完成，开始评估..." | tee -a ${OUTPUT_DIR}/evaluation.log

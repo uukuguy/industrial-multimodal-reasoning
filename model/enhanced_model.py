@@ -13,6 +13,12 @@ from .cross_modal_attention import MultiModalAttentionHub
 from .modality_reconstructor import ModalityReconstructor
 from .uncertainty_estimator import UncertaintyEstimator
 from .qa_module import ReasoningQAModule, EnhancedReasoningQAModule
+from .optimization import (
+    ComputationOptimizationConfig,
+    optimize_model_computation,
+    MemoryOptimizationConfig,
+    optimize_model_memory
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,21 +27,41 @@ class EnhancedMultiModalModel(nn.Module):
     增强型多模态模型，集成了多模态编码、融合和问答能力
     """
     
-    def __init__(self, config_path: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        computation_config: Optional[ComputationOptimizationConfig] = None,
+        memory_config: Optional[MemoryOptimizationConfig] = None
+    ):
         """
         初始化增强型多模态模型
         
         Args:
-            config_path: 配置文件路径
-            **kwargs: 配置参数覆盖
+            config: 配置字典
+            computation_config: 计算优化配置
+            memory_config: 内存优化配置
         """
         super().__init__()
+        self.config = config
         
+        # 初始化计算和内存优化配置
+        self.computation_config = computation_config or ComputationOptimizationConfig()
+        self.memory_config = memory_config or MemoryOptimizationConfig()
+        
+        # 初始化模型组件
+        self._init_components()
+        
+        # 应用优化
+        self._apply_optimizations()
+        
+    def _init_components(self):
+        """初始化模型组件"""
         # 加载配置
+        config_path = self.config.get('config_path')
         if config_path:
             self.config = load_config(config_path)
         else:
-            self.config = kwargs
+            self.config = self.config
         
         # 验证配置
         validate_config(self.config)
@@ -208,6 +234,18 @@ class EnhancedMultiModalModel(nn.Module):
         )
             
         return estimator
+    
+    def _apply_optimizations(self):
+        """应用模型优化"""
+        logger.info("开始应用模型优化...")
+        
+        # 1. 应用计算优化
+        self = optimize_model_computation(self, self.computation_config)
+        
+        # 2. 应用内存优化
+        self = optimize_model_memory(self, self.memory_config)
+        
+        logger.info("模型优化完成")
     
     def encode_document(self, page_data_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -472,7 +510,7 @@ class EnhancedMultiModalModel(nn.Module):
         
         # 创建模型实例
         config = state_dict['config']
-        model = cls(config_path=None, **config)
+        model = cls(config=config)
         
         # 加载模型权重
         model.load_state_dict(state_dict['model'])
@@ -509,7 +547,7 @@ class EnhancedMultiModalModel(nn.Module):
                     if config_override:
                         config.update(config_override)
                     logger.info(f"没有找到模型权重，从配置创建新模型: {config_path}")
-                    model = cls(config_path=None, **config)
+                    model = cls(config=config)
                     if device:
                         model = model.to(device)
                     return model
@@ -553,6 +591,21 @@ class EnhancedMultiModalModel(nn.Module):
         
         torch.save(state_dict, path)
         logger.info(f"模型已保存到: {path}")
+
+    def optimize_batch_size(self, throughput: float, latency: float) -> int:
+        """优化批处理大小"""
+        return self.computation_optimizer.optimize_batch_size(throughput, latency)
+        
+    def clear_memory(self):
+        """清理内存缓存"""
+        if hasattr(self, 'memory_optimizer'):
+            self.memory_optimizer.clear_memory()
+            
+    def estimate_memory_usage(self, batch_size: int) -> float:
+        """估计内存使用"""
+        if hasattr(self, 'memory_optimizer'):
+            return self.memory_optimizer.estimate_memory_usage(batch_size)
+        return 0.0
 
 
 if __name__ == "__main__":
