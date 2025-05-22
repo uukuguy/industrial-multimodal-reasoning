@@ -17,7 +17,7 @@ from typing import List, Dict, Any, Optional, Union, Tuple
 # 导入优化后的模块
 from .config import load_config, validate_config, init_config
 from .pdf_processor import process_pdf
-from .enhanced_model import EnhancedMultiModalModel
+from .model import EnhancedMultimodalModel
 
 # 设置日志
 logging.basicConfig(
@@ -179,7 +179,7 @@ def process_single_question(
             worker_logger.info("使用共享模型")
         else:
             worker_logger.info("初始化新模型实例")
-            model = EnhancedMultiModalModel(**config)
+            model = EnhancedMultimodalModel(**config)
         
         # 6. 编码文档
         worker_logger.info("开始编码文档...")
@@ -274,7 +274,7 @@ def main(questions_jsonl_path: str, pdf_documents_dir: str, output_jsonl_path: s
     if not parallel:
         try:
             logger.info("初始化增强型多模态模型...")
-            model = EnhancedMultiModalModel(**config)
+            model = EnhancedMultimodalModel(**config)
             shared_model_info = {'model': model}
             logger.info("模型初始化成功")
         except Exception as e:

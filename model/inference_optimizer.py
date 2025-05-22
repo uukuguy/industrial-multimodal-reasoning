@@ -141,8 +141,8 @@ class InferenceOptimizer:
                 logger.info(f"以8位精度加载模型: {self.model_path}")
             else:
                 # 使用增强型模型的加载方法
-                from .enhanced_model import EnhancedModel
-                self.model = EnhancedModel.from_pretrained(self.model_path)
+                from .model import EnhancedMultimodalModel
+                self.model = EnhancedMultimodalModel.from_pretrained(self.model_path)
                 self.model.to(self.device)
                 self.model.eval()  # 设置为评估模式
                 logger.info(f"标准精度加载模型: {self.model_path}")

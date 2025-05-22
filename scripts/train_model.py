@@ -25,7 +25,7 @@ from model.optimization import (
     ComputationOptimizationConfig,
     MemoryOptimizationConfig
 )
-from model.enhanced_model import EnhancedMultiModalModel
+from model.model import EnhancedMultimodalModel
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -334,7 +334,7 @@ def update_config_from_args(config: Dict[str, Any], args: argparse.Namespace, re
 class ModelTrainer:
     def __init__(
         self,
-        model: EnhancedMultiModalModel,
+        model: EnhancedMultimodalModel,
         train_loader: DataLoader,
         val_loader: Optional[DataLoader] = None,
         computation_config: Optional[ComputationOptimizationConfig] = None,
@@ -466,7 +466,7 @@ class ModelTrainer:
         return total_loss / batch_count
 
 def train_model(
-    model: EnhancedMultiModalModel,
+    model: EnhancedMultimodalModel,
     train_loader: DataLoader,
     val_loader: Optional[DataLoader] = None,
     num_epochs: int = 10,
@@ -661,10 +661,10 @@ def main():
     # 创建模型
     if args.resume:
         logger.info(f"从检查点加载模型: {args.resume}")
-        model = EnhancedMultiModalModel.from_pretrained(args.resume)
+        model = EnhancedMultimodalModel.from_pretrained(args.resume)
     else:
         logger.info("创建新模型")
-        model = EnhancedMultiModalModel(**config)
+        model = EnhancedMultimodalModel(**config)
     
     # 创建数据加载器
     train_loader = DataLoader(

@@ -15,7 +15,7 @@ from .cross_modal_attention import CrossModalAttention, MultiModalAttentionHub
 from .modality_reconstructor import ModalityReconstructor
 from .uncertainty_estimator import UncertaintyEstimator
 from .qa_module import ReasoningQAModule, EnhancedReasoningQAModule
-from .enhanced_model import EnhancedMultiModalModel
+from .model import EnhancedMultimodalModel
 from .config import load_config, save_config, init_config
 
 # 导出训练相关模块
