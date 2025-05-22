@@ -54,6 +54,12 @@
    - 与Weights & Biases集成的实验追踪
    - 自动化的最佳化配置选择
 
+5. **注意力优化**：
+   - 稀疏注意力：通过阈值过滤低注意力分数，减少计算量和内存使用
+   - 注意力头剪枝：基于重要性分数选择保留的注意力头，减少模型参数量
+   - Flash Attention：使用优化的注意力计算实现，提高计算速度
+   - 滑动窗口注意力：限制每个位置只能关注窗口内的其他位置，优化长序列处理
+
 ### 优化损失函数
 
 新增了专门针对工业技术文档多模态理解的优化损失函数：
@@ -74,6 +80,24 @@ python scripts/train_model.py \
 - **多任务学习支持**：整合重构损失和跨模态对齐损失
 - **置信度校准**：考虑不确定性估计，增强可靠性
 
+### 注意力优化配置
+
+```python
+# 注意力优化配置示例
+optimization_config = OptimizationConfig(
+    attention_optimization=AttentionOptimizationConfig(
+        use_sparse_attention=True,      # 启用稀疏注意力
+        sparse_attention_threshold=0.1,  # 稀疏注意力阈值
+        use_head_pruning=True,          # 启用注意力头剪枝
+        head_pruning_ratio=0.3,         # 剪枝比例
+        use_attention_cache=True,       # 启用注意力缓存
+        use_flash_attention=True,       # 启用Flash Attention
+        use_sliding_window=True,        # 启用滑动窗口注意力
+        window_size=512                 # 滑动窗口大小
+    )
+)
+```
+
 ### 预期效果
 
 - 初赛任务准确率提升15-20%
@@ -81,12 +105,372 @@ python scripts/train_model.py \
 - 对低频问题类型的处理能力大幅提升
 - 训练效率和资源利用率明显优化
 - 技术参数和数值识别准确度提高25-30%
+- 注意力计算效率提升40-50%
+- 长序列处理能力显著增强
+- 内存使用量减少30-40%
 
 ### 数据流
 
 ```
 PDF文档 → 文档预处理 → 多模态编码 → 多模态融合 → 推理与问答 → 答案
 ```
+
+## 不确定性估计系统
+
+系统实现了全面的不确定性估计机制，提供多层次的不确定性评估和可视化分析。
+
+### 核心功能
+
+1. **多层次不确定性评估**
+   - 任务级不确定性：评估整体预测的可靠性
+   - 模态级不确定性：评估各模态（文本、视觉、布局）的可靠性
+   - 特征级不确定性：评估不同特征的贡献度
+   - 推理路径不确定性：评估推理过程的可靠性
+
+2. **多种不确定性估计方法**
+   - Monte Carlo Dropout：通过多次采样估计不确定性
+   - 证据深度学习：使用证据理论进行不确定性估计
+   - 温度缩放校准：优化模型置信度
+   - 特征重要性分析：评估不同特征的可靠性
+
+3. **自校正机制**
+   - 基于多模态不确定性的综合评估
+   - 模态贡献度分析
+   - 推理路径可靠性评估
+   - 自适应阈值调整
+
+4. **可视化分析**
+   - 预测与不确定性关系图
+   - 模态贡献度热力图
+   - 特征不确定性分布图
+   - 推理路径不确定性分析
+
+### 实现细节
+
+```python
+class UncertaintyEstimator(nn.Module):
+    def __init__(self, embedding_dim, num_classes=4, hidden_dim=256, 
+                 dropout=0.1, temperature=1.5, use_mc_dropout=True, 
+                 n_mc_samples=10, use_evidential=True):
+        # 任务级不确定性
+        self.task_uncertainty = nn.Sequential(
+            nn.Linear(embedding_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, 1),
+            nn.Softplus()
+        )
+        
+        # 模态级不确定性
+        self.modal_uncertainty = nn.ModuleDict({
+            'text': self._build_uncertainty_net(...),
+            'visual': self._build_uncertainty_net(...),
+            'layout': self._build_uncertainty_net(...)
+        })
+        
+        # 特征级不确定性
+        self.feature_uncertainty = nn.Sequential(...)
+        
+        # 推理路径不确定性
+        self.reasoning_uncertainty = nn.Sequential(...)
+```
+
+### 使用示例
+
+```python
+# 初始化不确定性估计器
+estimator = UncertaintyEstimator(
+    embedding_dim=768,
+    num_classes=4,
+    use_mc_dropout=True,
+    use_evidential=True
+)
+
+# 获取预测和不确定性
+results = estimator.predict_with_uncertainty(
+    embedding=model_output,
+    modal_embeddings={
+        'text': text_embedding,
+        'visual': visual_embedding,
+        'layout': layout_embedding
+    },
+    options=['A', 'B', 'C', 'D']
+)
+
+# 可视化不确定性分析
+estimator.visualize_uncertainty(
+    predictions=results['predictions'],
+    uncertainties=results['uncertainties'],
+    save_path='uncertainty_analysis.png'
+)
+```
+
+### 主要优势
+
+1. **全面的不确定性评估**
+   - 从多个角度评估不确定性
+   - 提供细粒度的分析
+   - 支持多模态场景
+
+2. **强大的可视化能力**
+   - 丰富的可视化分析
+   - 清晰的模态贡献度展示
+   - 直观的推理路径分析
+
+3. **可靠的预测机制**
+   - 多种不确定性估计方法互补
+   - 多层次的不确定性验证
+   - 自适应阈值调整
+
+4. **灵活的集成方式**
+   - 易于与现有模型集成
+   - 支持多种任务类型
+   - 可配置的参数设置
+
+## 预训练模型支持
+
+系统采用工厂模式设计，支持多种预训练模型，可以根据任务需求灵活选择：
+
+### 1. 文本编码器
+
+#### 1.1 中文语言模型
+- **BERT-base-Chinese**：基础中文BERT模型
+- **RoBERTa-wwm-ext**：全词掩码预训练的中文RoBERTa
+- **MacBERT**：改进的中文BERT变体
+- **ERNIE**：百度知识增强预训练模型
+- **DeBERTa-v3-base**：增强型中文DeBERTa模型
+- **NV-Embed-v2**：NVIDIA优化的中文嵌入模型
+
+#### 1.2 多语言模型
+- **XLM-RoBERTa**：支持中英双语
+- **mT5**：多语言T5模型
+- **mBART**：多语言BART模型
+- **DeBERTa-v3-large**：多语言DeBERTa模型
+- **NV-Embed-v2-multilingual**：NVIDIA优化的多语言嵌入模型
+
+#### 1.3 句子编码模型
+- **SentenceTransformer**：支持多种预训练模型
+  - paraphrase-multilingual-MiniLM-L12-v2：多语言句子编码
+  - distiluse-base-multilingual-cased-v2：多语言蒸馏模型
+  - xlm-r-100langs-bert-base-nli-stsb-mean-tokens：跨语言语义相似度
+  - LaBSE：语言无关的BERT句子嵌入
+  - NV-Embed-v2：优化的句子嵌入模型
+
+#### 1.4 自动模型选择
+- **AutoModel**：自动选择最适合的预训练模型
+- 支持Hugging Face模型库中的所有文本模型
+- 自动处理模型特定的预处理和后处理
+
+### 2. 视觉编码器
+
+#### 2.1 通用视觉模型
+- **ViT**：Vision Transformer
+  - 支持多种变体：base、large、huge
+  - 支持不同patch大小：16x16、32x32
+- **Swin Transformer**：层次化视觉Transformer
+  - 支持不同规模：tiny、small、base、large
+  - 支持不同窗口大小：7x7、14x14
+
+#### 2.2 文档专用模型
+- **LayoutLM**：文档布局理解模型
+  - 支持base和large版本
+  - 支持多语言版本
+
+### 3. 多模态模型
+
+#### 3.1 通用多模态模型
+- **CLIP**：对比语言-图像预训练
+  - 支持多种视觉backbone：ViT、ResNet
+  - 支持不同规模：base、large
+- **ALIGN**：大规模图像-文本对齐
+- **CoCa**：对比字幕预训练
+
+#### 3.2 文档多模态模型
+- **LayoutLMv2**：增强版文档布局理解
+  - 支持base和large版本
+  - 支持多语言版本
+- **DocVQA**：文档视觉问答预训练
+- **StrucText**：结构化文本理解
+
+### 4. 模型配置示例
+
+```python
+# 配置预训练模型
+model_config = {
+    "text_encoder": {
+        "type": "nv-embed",  # 使用NV-Embed-v2
+        "model_name": "nvidia/nv-embed-v2",  # 或其他NV-Embed模型
+        "use_pretrained": True,
+        "freeze_layers": [0, 1, 2]  # 冻结前3层
+    },
+    "visual_encoder": {
+        "type": "vit",
+        "model_name": "google/vit-base-patch16-224",
+        "use_pretrained": True,
+        "image_size": 224
+    },
+    "layout_encoder": {
+        "type": "layoutlm",
+        "model_name": "microsoft/layoutlm-base-uncased",
+        "use_pretrained": True
+    }
+}
+
+# 使用自动模型选择
+auto_config = {
+    "text_encoder": {
+        "type": "auto",
+        "model_name": "bert-base-chinese",  # 自动选择适合的模型架构
+        "use_pretrained": True
+    }
+}
+```
+
+### 5. 模型使用示例
+
+```python
+from model.pretrained_models import TextEncoderFactory, VisualEncoderFactory, MultimodalEncoderFactory
+
+# 创建文本编码器
+text_encoder = TextEncoderFactory.create_encoder(
+    model_type="nv-embed",
+    model_name="nvidia/nv-embed-v2",
+    freeze_layers=[0, 1, 2]
+)
+
+# 创建视觉编码器
+visual_encoder = VisualEncoderFactory.create_encoder(
+    model_type="vit",
+    model_name="google/vit-base-patch16-224",
+    image_size=224
+)
+
+# 创建多模态编码器
+multimodal_encoder = MultimodalEncoderFactory.create_encoder(
+    model_type="clip",
+    model_name="openai/clip-vit-base-patch32"
+)
+
+# 使用编码器
+text_features = text_encoder(input_ids, attention_mask)
+visual_features = visual_encoder(pixel_values)
+multimodal_features = multimodal_encoder(input_ids, pixel_values, attention_mask)
+```
+
+### 6. 模型特性
+
+#### 6.1 文本编码器特性
+- 支持多种预训练模型架构
+- 支持模型层冻结
+- 支持自动模型选择
+- 支持特殊池化策略（如NV-Embed-v2）
+- 支持多语言处理
+
+#### 6.2 视觉编码器特性
+- 支持多种视觉backbone
+- 支持自定义图像大小
+- 支持版面信息处理
+- 支持批处理优化
+
+#### 6.3 多模态编码器特性
+- 支持跨模态对齐
+- 支持多模态特征融合
+- 支持版面信息集成
+- 支持灵活的输入处理
+
+### 7. 性能优化
+
+#### 7.1 内存优化
+- 模型层冻结
+- 梯度检查点
+- 混合精度训练
+- 动态批处理
+
+#### 7.2 速度优化
+- 模型缓存
+- 批处理优化
+- 注意力优化
+- 并行处理
+
+#### 7.3 质量优化
+- 多模型集成
+- 特征融合优化
+- 不确定性估计
+- 自适应策略
+
+## 增强的模态重构能力
+
+系统实现了强大的模态重构功能，支持在不同模态之间进行特征重构，以应对模态缺失的情况。
+
+### 核心功能
+
+1. **多模态重构**
+   - 视觉特征重构：从文本和版面特征重构视觉信息
+   - 文本特征重构：从视觉和版面特征重构文本信息
+   - 版面特征重构：从视觉和文本特征重构版面信息
+
+2. **自适应重构策略**
+   - 根据可用模态自动选择最佳重构路径
+   - 支持多重构器集成和动态选择
+
+3. **重构质量评估**
+   - 多指标评估：MSE、余弦相似度、L1损失
+   - 实时质量监控和反馈
+
+4. **对抗训练机制**
+   - 使用GAN架构提升重构质量
+   - 支持重构器和判别器的联合训练
+
+### 使用示例
+
+```python
+# 初始化重构器
+visual_reconstructor = VisualReconstructor(
+    text_dim=768,
+    layout_dim=512,
+    visual_dim=1024
+)
+
+# 初始化评估器
+evaluator = ReconstructionEvaluator()
+
+# 初始化训练器
+trainer = ReconstructionTrainer(visual_reconstructor)
+
+# 训练步骤
+losses = trainer.train_step(
+    available_modalities={
+        'text_features': text_features,
+        'layout_features': layout_features
+    },
+    target=visual_features
+)
+
+# 评估重构质量
+metrics = evaluator.evaluate(
+    original=visual_features,
+    reconstructed=reconstructed_features
+)
+```
+
+### 主要优势
+
+1. **鲁棒性**
+   - 支持任意模态组合的重构
+   - 自适应选择最佳重构路径
+
+2. **高质量重构**
+   - 使用对抗训练提升重构质量
+   - 多指标评估确保重构效果
+
+3. **灵活集成**
+   - 模块化设计便于扩展
+   - 支持自定义重构策略
+
+4. **训练优化**
+   - 支持端到端训练
+   - 提供完整的训练和评估工具
 
 ## 模型设计与实现
 
@@ -107,6 +491,7 @@ PDF文档 → 文档预处理 → 多模态编码 → 多模态融合 → 推理
 - **自适应注意力门控**：根据模态内容动态调整信息流动
 - **多头注意力**：从不同角度捕获模态间关系
 - **模态对交互**：视觉-文本、视觉-版面、文本-版面之间的双向交互
+- **优化注意力计算**：使用稀疏注意力、注意力头剪枝、Flash Attention等技术优化计算效率
 
 #### 1.3 缺失模态处理
 
@@ -847,16 +1232,67 @@ industrial-multimodal-reasoning/
 │   ├── __init__.py             # 包初始化
 │   ├── config.py               # 配置系统
 │   ├── cross_modal_attention.py # 跨模态注意力
+│   ├── data_augmentation.py    # 数据增强实现
+│   ├── dataset.py             # 数据集处理
 │   ├── enhanced_model.py       # 增强型模型
+│   ├── inference_optimizer.py  # 推理优化器
 │   ├── main_processing_script.py # 主处理脚本
 │   ├── modality_reconstructor.py # 模态重构
 │   ├── multimodal_encoder.py   # 多模态编码
 │   ├── multimodal_fusion.py    # 多模态融合
+│   ├── optimization.py        # 模型优化
 │   ├── pdf_processor.py        # PDF处理
+│   ├── peft_training.py       # PEFT训练实现
 │   ├── qa_module.py            # 问答模块
+│   ├── trainer.py             # 训练器实现
 │   └── uncertainty_estimator.py # 不确定性估计
+├── scripts/                    # 脚本目录
+│   ├── convert_src_to_model.py # 源码转换脚本
+│   ├── data_analysis.py       # 数据分析脚本
+│   ├── inference.py           # 推理脚本
+│   ├── process_pdf_documents.py # PDF处理脚本
+│   ├── run_inference.sh       # 推理运行脚本
+│   ├── train_multi_gpu.sh     # 多GPU训练脚本
+│   ├── train_multi_gpu_yaml.sh # YAML配置多GPU训练
+│   ├── train_multi_node.sh    # 多节点训练脚本
+│   ├── train_model.py         # 模型训练脚本
+│   └── train_single_gpu.sh    # 单GPU训练脚本
 └── README.md                   # 项目说明
 ```
+
+### 核心模块说明
+
+1. **数据处理与增强**
+   - `data_augmentation.py`: 实现智能数据增强，包括问题改写、选项增强和困难负样本生成
+   - `dataset.py`: 处理数据集加载和预处理
+   - `process_pdf_documents.py`: 处理PDF文档的批处理脚本
+
+2. **模型优化与训练**
+   - `optimization.py`: 实现模型优化，包括注意力优化、量化等
+   - `peft_training.py`: 实现参数高效微调(PEFT)训练
+   - `trainer.py`: 实现增强型训练器，支持分布式训练和混合精度
+   - `inference_optimizer.py`: 实现推理优化，包括批处理和缓存
+
+3. **多模态处理**
+   - `multimodal_encoder.py`: 实现文本、图像和版面编码
+   - `multimodal_fusion.py`: 实现多模态信息融合
+   - `cross_modal_attention.py`: 实现跨模态注意力机制
+   - `modality_reconstructor.py`: 实现模态重构
+
+4. **推理与问答**
+   - `qa_module.py`: 实现问答模块，支持选择题和开放题
+   - `inference.py`: 实现高效推理
+   - `run_inference.sh`: 提供多种推理模式的运行脚本
+
+5. **训练脚本**
+   - `train_model.py`: 主训练脚本，支持多种训练配置
+   - `train_multi_gpu.sh`: 多GPU训练配置
+   - `train_multi_node.sh`: 多节点训练配置
+   - `train_single_gpu.sh`: 单GPU训练配置
+
+6. **工具脚本**
+   - `data_analysis.py`: 数据分析工具
+   - `convert_src_to_model.py`: 源码转换工具
 
 ## 引用与致谢
 
