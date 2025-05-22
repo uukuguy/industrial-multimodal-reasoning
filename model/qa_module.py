@@ -35,12 +35,15 @@ class ReasoningQAModule(nn.Module):
         
         try:
             # 尝试加载大型多模态模型
-            # 注意：在实际环境中，这里需要加载真实的LMM模型
-            # 例如：self.lmm_model = AutoModelForCausalLM.from_pretrained(lmm_model_name)
-            # 由于当前环境限制，使用占位符实现
-            self.lmm_model = None
-            self.lmm_initialized = False
-            logger.warning(f"大型多模态模型 {lmm_model_name} 未加载，使用占位符实现")
+            logger.info(f"正在加载大型多模态模型: {lmm_model_name}")
+            
+            # 检查模型路径是否存在
+            if os.path.exists(lmm_model_name):
+                # 本地模型路径
+                self._load_local_model(lmm_model_name)
+            else:
+                # 预训练模型名称
+                self._load_pretrained_model(lmm_model_name)
             
             # 创建不确定性估计器 - 用于初赛（ABCD选择题）
             self.uncertainty_estimator = UncertaintyEstimator(
@@ -64,6 +67,86 @@ class ReasoningQAModule(nn.Module):
             logger.error(f"初始化推理与问答模块失败: {e}")
             self.lmm_model = None
             self.lmm_initialized = False
+    
+    def _load_local_model(self, model_path: str) -> None:
+        """
+        从本地路径加载模型
+        
+        Args:
+            model_path: 模型路径
+        """
+        try:
+            # 尝试使用torch.load加载模型
+            if os.path.isfile(model_path):
+                # 单个模型文件
+                self.lmm_model = torch.load(model_path, map_location=torch.device('cpu'))
+                self.lmm_initialized = True
+                logger.info(f"成功从文件加载模型: {model_path}")
+            elif os.path.isdir(model_path):
+                # 模型目录，尝试使用transformers加载
+                try:
+                    from transformers import AutoModelForCausalLM, AutoTokenizer
+                    
+                    # 加载分词器
+                    self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+                    
+                    # 加载模型
+                    self.lmm_model = AutoModelForCausalLM.from_pretrained(
+                        model_path,
+                        torch_dtype=torch.float16,  # 使用半精度加速
+                        device_map="auto"  # 自动分配到可用设备
+                    )
+                    
+                    self.lmm_initialized = True
+                    logger.info(f"成功使用transformers从目录加载模型: {model_path}")
+                except ImportError:
+                    logger.warning("未安装transformers库，无法加载预训练模型")
+                    self._fallback_to_placeholder()
+                except Exception as e:
+                    logger.error(f"使用transformers加载模型失败: {e}")
+                    self._fallback_to_placeholder()
+            else:
+                logger.error(f"模型路径无效: {model_path}")
+                self._fallback_to_placeholder()
+        except Exception as e:
+            logger.error(f"加载本地模型失败: {e}")
+            self._fallback_to_placeholder()
+    
+    def _load_pretrained_model(self, model_name: str) -> None:
+        """
+        从预训练模型库加载模型
+        
+        Args:
+            model_name: 模型名称
+        """
+        try:
+            # 尝试使用transformers加载预训练模型
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            
+            # 加载分词器
+            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+            
+            # 加载模型
+            self.lmm_model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch.float16,  # 使用半精度加速
+                device_map="auto"  # 自动分配到可用设备
+            )
+            
+            self.lmm_initialized = True
+            logger.info(f"成功加载预训练模型: {model_name}")
+        except ImportError:
+            logger.warning("未安装transformers库，无法加载预训练模型")
+            self._fallback_to_placeholder()
+        except Exception as e:
+            logger.error(f"加载预训练模型失败: {e}")
+            self._fallback_to_placeholder()
+    
+    def _fallback_to_placeholder(self) -> None:
+        """回退到占位符实现"""
+        self.lmm_model = None
+        self.lmm_initialized = False
+        logger.warning("使用占位符实现")
     
     def is_initialized(self) -> bool:
         """检查模块是否成功初始化"""
@@ -213,18 +296,67 @@ class ReasoningQAModule(nn.Module):
         # 投影嵌入以适应LMM
         projected_embedding = self.text_generation_projection(document_embedding)
         
-        # 前向传播准备用于LMM的条件嵌入
-        # 注意：真实实现需要根据具体的LMM模型调整
-        
         # 构建提示词
         prompt = self.preprocess_question(question)
         if options:
             prompt += f" 选项: {', '.join(options)}"
         
-        # 模拟LMM生成过程
-        # 实际实现需要调用真实的LMM模型
-        answer = f"这是LMM生成的答案: {'A' if options else '这是一个生成的答案文本。'}"
-        confidence = 0.85
+        try:
+            # 使用实际的LMM模型生成答案
+            if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+                # 使用transformers API
+                inputs = self.tokenizer(prompt, return_tensors="pt").to(self.lmm_model.device)
+                
+                # 将文档嵌入注入到模型中
+                # 注意：具体实现取决于模型架构，这里使用一个通用方法
+                if hasattr(self.lmm_model, 'condition_on_embeddings'):
+                    # 如果模型支持条件嵌入
+                    self.lmm_model.condition_on_embeddings(projected_embedding)
+                
+                # 生成参数
+                gen_kwargs = {
+                    "max_length": len(inputs.input_ids[0]) + self.max_answer_length if hasattr(self, 'max_answer_length') else 100,
+                    "temperature": self.temperature,
+                    "top_k": self.top_k if hasattr(self, 'top_k') else 50,
+                    "top_p": 0.95,
+                    "do_sample": True,
+                    "num_return_sequences": 1,
+                }
+                
+                # 生成答案
+                with torch.no_grad():
+                    outputs = self.lmm_model.generate(**inputs, **gen_kwargs)
+                
+                # 解码生成的文本
+                generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+                
+                # 提取答案部分（去除提示词部分）
+                answer = generated_text[len(prompt):].strip()
+                
+                # 计算置信度（使用生成概率）
+                if hasattr(outputs, 'sequences_scores'):
+                    confidence = torch.sigmoid(outputs.sequences_scores[0]).item()
+                else:
+                    confidence = 0.8  # 默认置信度
+            else:
+                # 回退到简单实现
+                logger.warning("使用简单实现生成答案")
+                if options:
+                    # 选择题：随机选择一个选项
+                    import random
+                    answer = random.choice(options)
+                else:
+                    # 开放题：生成一个简单答案
+                    answer = "根据文档内容，无法提供准确答案。"
+                confidence = 0.5
+        except Exception as e:
+            logger.error(f"LMM生成答案失败: {e}")
+            # 回退到简单实现
+            if options:
+                answer = options[0]  # 默认选第一个选项
+            else:
+                answer = "生成答案时发生错误。"
+            confidence = 0.3
         
         # 后处理答案
         processed_answer = self.postprocess_answer(answer, options)

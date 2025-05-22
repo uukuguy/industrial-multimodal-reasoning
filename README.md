@@ -273,10 +273,23 @@ if processed_data:
 
 #### 2.9 配置系统 (`model/config.py`)
 
-灵活配置系统：
+增强型YAML配置系统：
 - **配置继承**：基于默认配置进行覆盖
 - **配置验证**：自动检查配置有效性
 - **运行时配置**：支持命令行参数覆盖
+- **延迟加载**：按需加载配置，提高性能
+- **YAML支持**：使用人类可读的YAML格式
+- **配置文件分离**：默认配置与训练配置分离
+- **随机种子管理**：确保实验可复现性
+- **自动目录创建**：确保输出目录存在
+
+配置系统支持多种配置方式：
+- **默认配置**：`config/default_config.yaml`包含所有可配置参数
+- **训练配置**：`config/training_config.yaml`针对特定训练场景优化
+- **命令行覆盖**：命令行参数可覆盖配置文件中的设置
+- **配置合并**：多个配置源可以递归合并
+
+详细说明请参考[YAML配置系统使用指南](docs/yaml_configuration_guide.md)。
 
 ### 3. 模型训练
 
@@ -330,8 +343,18 @@ python scripts/train_model.py \
     --output_dir outputs/model_v1 \
     --batch_size 16 \
     --epochs 15 \
-    --fp16 \
-    --config config/training_config.yaml
+    --fp16
+
+# 使用YAML配置文件训练
+python scripts/train_model.py \
+    --config config/training_config.yaml \
+    --output_dir outputs/yaml_config_model
+
+# 配置文件与命令行参数结合（命令行参数优先级更高）
+python scripts/train_model.py \
+    --config config/training_config.yaml \
+    --learning_rate 5e-5 \
+    --output_dir outputs/custom_config_model
     
 # 从检查点恢复训练
 python scripts/train_model.py \
@@ -361,13 +384,16 @@ python scripts/train_model.py \
 - `--batch_size`: 批处理大小
 - `--epochs`: 训练轮数
 - `--workers`: 数据加载工作进程数
-- `--config`: 模型配置文件路径
+- `--config`: YAML配置文件路径，包含所有训练参数
 - `--output_dir`: 结果输出目录
 - `--resume`: 从检查点恢复训练(可选)
+- `--validation_split_ratio`: 验证集划分比例，0-1之间的浮点数(可选)
+- `--validation_split_count`: 验证集样本数量，整数，优先级高于比例参数(可选)
+- `--validation_split_seed`: 数据集划分的随机种子，用于复现划分结果(可选)
 
 #### 3.3 训练配置
 
-可以通过YAML配置文件自定义训练参数：
+系统提供了完整的YAML配置系统，支持灵活配置所有训练参数：
 
 ```yaml
 # config/training_config.yaml
@@ -380,16 +406,69 @@ model:
   use_uncertainty: true
 
 training:
-  num_epochs: 15
-  batch_size: 16
+  num_epochs: 10
+  batch_size: 6
+  gradient_accumulation_steps: 2
+  fp16: true  # 使用混合精度训练
+  
   optimizer:
     type: "AdamW"
-    learning_rate: 0.0001
+    learning_rate: 3e-5
     weight_decay: 0.01
+  
   scheduler:
     type: "cosine"
     warmup_ratio: 0.1
+
+# 数据集划分配置
+dataset_split:
+  validation_split_ratio: 0.2
+  validation_split_count: 100  # 优先使用样本数量
+  validation_split_seed: 42
 ```
+
+##### 3.3.1 配置文件类型
+
+系统提供两种主要配置文件：
+
+1. **默认配置文件** (`config/default_config.yaml`)：
+   - 包含所有可配置参数及其默认值
+   - 详细的参数注释和说明
+   - 作为创建自定义配置的参考模板
+
+2. **训练配置文件** (`config/training_config.yaml`)：
+   - 针对特定训练场景优化的配置示例
+   - 启用了高级功能如PEFT、数据增强和优化损失函数
+   - 包含数据路径和输出目录配置
+
+##### 3.3.2 使用配置文件
+
+可以通过以下方式使用配置文件：
+
+```bash
+# 使用配置文件训练
+python scripts/train_model.py --config config/training_config.yaml
+
+# 配置文件与命令行参数结合（命令行参数优先级更高）
+python scripts/train_model.py \
+  --config config/training_config.yaml \
+  --learning_rate 5e-5 \
+  --output_dir outputs/custom_run
+```
+
+##### 3.3.3 配置文件与训练脚本
+
+为方便使用YAML配置系统，提供了专用训练脚本：
+
+```bash
+# 使用YAML配置的单机多卡训练
+bash scripts/train_multi_gpu_yaml.sh
+
+# 简单的YAML配置训练示例
+bash examples/train_with_yaml.sh
+```
+
+详细说明请参考[YAML配置系统使用指南](docs/yaml_configuration_guide.md)。
 
 #### 3.4 分布式训练
 
@@ -455,7 +534,9 @@ tensorboard --logdir outputs/model_v1/logs
 
 #### 3.5.1 训练脚本
 
-为了方便不同规模的训练，我们提供了三个预配置脚本：
+为了方便不同规模的训练，我们提供了多种预配置脚本：
+
+##### 命令行参数版本
 
 ```bash
 # 单机单卡训练（入门/调试）
@@ -472,11 +553,25 @@ bash scripts/train_multi_node.sh --master_addr "192.168.1.100" --node_rank 0 --n
 bash scripts/train_multi_node.sh --master_addr "192.168.1.100" --node_rank 1 --nnodes 2
 ```
 
+##### YAML配置版本
+
+```bash
+# 使用YAML配置的单机多卡训练
+bash scripts/train_multi_gpu_yaml.sh
+
+# 简单的YAML配置训练示例（适合入门）
+bash examples/train_with_yaml.sh
+```
+
 这些脚本包括完整的训练流程配置，包括：
 - 自动创建带时间戳的输出目录
 - 详细的日志记录
 - 训练后的模型评估
 - 优化的超参数设置
+
+命令行参数版本和YAML配置版本的主要区别：
+- 命令行参数版本：通过脚本中的变量和命令行参数控制训练
+- YAML配置版本：通过YAML配置文件控制大部分训练参数，更灵活和可维护
 
 多节点训练脚本支持丰富的配置选项：
 ```bash
