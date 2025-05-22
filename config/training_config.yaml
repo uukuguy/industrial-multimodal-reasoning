@@ -1,0 +1,132 @@
+# =============================================================================
+# 训练配置文件
+# =============================================================================
+
+# 模型总体配置
+model:
+  name: "IndustrialDocQA"
+  version: "1.0.0"
+  embedding_dim: 768
+  fusion_dim: 512
+  use_cache: true
+  device: "auto"
+  use_reconstructor: true  # 启用模态重构器
+  use_uncertainty: true    # 启用不确定性估计
+
+# 编码器配置
+encoders:
+  text:
+    model_name: "/opt/local/llm_models/huggingface.co/google/bert-base-chinese"
+    pooling_strategy: "cls"
+    max_length: 512
+    batch_size: 16
+  vision:
+    model_name: "/opt/local/llm_models/huggingface.co/google/vit-base-patch16-224"
+    image_size: 224
+    batch_size: 8
+    multiscale_fusion: true
+  layout:
+    feature_dim: 5
+    use_positional_encoding: true
+
+# 融合模块配置
+fusion:
+  strategy: "hierarchical"
+  num_attention_heads: 8
+  dropout: 0.1
+  use_layer_norm: true
+
+# 问答模块配置
+qa_module:
+  model_name: "/opt/local/llm_models/huggingface.co/Qwen/Qwen3-4B"
+  temperature: 1.0
+  max_answer_length: 100
+  confidence_threshold: 0.5
+  top_k: 1
+
+# 训练配置
+training:
+  # 基本训练参数
+  num_epochs: 10
+  batch_size: 6
+  gradient_accumulation_steps: 2
+  fp16: true  # 使用混合精度训练
+  
+  # 优化器配置
+  optimizer:
+    type: "AdamW"
+    learning_rate: 3e-5
+    weight_decay: 0.01
+    eps: 1e-8
+    betas: [0.9, 0.999]
+  
+  # 学习率调度器配置
+  scheduler:
+    type: "cosine"
+    warmup_ratio: 0.1
+  
+  # 评估配置
+  evaluation:
+    strategy: "epoch"
+    metric: "accuracy"
+    save_best: true
+  
+  # 检查点配置
+  checkpoint:
+    save_strategy: "epoch"
+    save_total_limit: 3
+    load_best_model_at_end: true
+  
+  # 日志配置
+  logging:
+    steps: 10
+    report_to: ["tensorboard"]
+
+# PEFT配置（参数高效微调）
+peft:
+  use_peft: true
+  peft_technique: "lora"
+  lora:
+    r: 8
+    alpha: 16
+    dropout: 0.1
+    target_modules: ["query", "key", "value"]
+
+# 数据增强配置
+data_augmentation:
+  use_data_augmentation: true
+  augmentation_factor: 1.5
+  min_samples_per_type: 20
+  techniques: ["synonym_replacement", "back_translation"]
+  seed: 42
+
+# 数据集划分配置
+dataset_split:
+  validation_split_ratio: 0.05
+  validation_split_count: 20  # 优先使用样本数量
+  validation_split_seed: 42
+  stratified: true
+
+# 损失函数配置
+loss:
+  use_optimized_loss: true
+  label_smoothing: 0.1
+  focal_loss:
+    use_focal_loss: true
+    gamma: 2.0
+
+# 系统配置
+system:
+  temp_dir: "temp_processed_data"
+  max_workers: 4
+  cache_dir: ".cache"
+  log_level: "INFO"
+  seed: 42
+  deterministic: true
+
+# 数据路径配置
+data:
+  train_questions: "data/raw_data/train/questions.jsonl"
+  documents_dir: "data/raw_data/train/documents"
+  processed_data_dir: "data/processed"
+  output_dir: "outputs"

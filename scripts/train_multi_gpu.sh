@@ -9,9 +9,15 @@ export PYTHONPATH=$(pwd):$PYTHONPATH
 
 # 基本配置参数
 TRAIN_DATA="data/raw_data/train/questions.jsonl"
-VALID_DATA="data/raw_data/valid/questions.jsonl"
+# VALID_DATA="data/raw_data/valid/questions.jsonl"  # 注释掉，使用自动划分
 DOC_DIR="data/raw_data/train/documents"
-OUTPUT_DIR="outputs/multi_gpu_$(date +%Y%m%d_%H%M%S)"  # 使用时间戳创建唯一输出目录
+# OUTPUT_DIR="outputs/multi_gpu_$(date +%Y%m%d_%H%M%S)"  # 使用时间戳创建唯一输出目录
+OUTPUT_DIR="outputs"
+
+# 验证集划分参数
+VALIDATION_SPLIT_RATIO=0.05  # 使用20%的数据作为验证集
+VALIDATION_SPLIT_COUNT=20  # 指定样本数量（优先级高于比例）
+VALIDATION_SPLIT_SEED=42  # 随机种子，确保可复现性
 
 # GPU数量配置
 NUM_GPUS=4  # 修改此参数以适应您的硬件配置
@@ -23,7 +29,9 @@ mkdir -p $OUTPUT_DIR
 echo "开始单机多卡训练 $(date)" | tee -a ${OUTPUT_DIR}/training.log
 echo "使用GPU数量: ${NUM_GPUS}" | tee -a ${OUTPUT_DIR}/training.log
 echo "训练数据: ${TRAIN_DATA}" | tee -a ${OUTPUT_DIR}/training.log
-echo "验证数据: ${VALID_DATA}" | tee -a ${OUTPUT_DIR}/training.log
+echo "验证集划分样本数: ${VALIDATION_SPLIT_COUNT} (优先)" | tee -a ${OUTPUT_DIR}/training.log
+echo "验证集划分比例: ${VALIDATION_SPLIT_RATIO}" | tee -a ${OUTPUT_DIR}/training.log
+echo "验证集划分随机种子: ${VALIDATION_SPLIT_SEED}" | tee -a ${OUTPUT_DIR}/training.log
 echo "文档目录: ${DOC_DIR}" | tee -a ${OUTPUT_DIR}/training.log
 echo "输出目录: ${OUTPUT_DIR}" | tee -a ${OUTPUT_DIR}/training.log
 
@@ -47,7 +55,9 @@ python -m torch.distributed.launch \
     --use_env \
     scripts/train_model.py \
     --train_questions ${TRAIN_DATA} \
-    --valid_questions ${VALID_DATA} \
+    --validation_split_ratio ${VALIDATION_SPLIT_RATIO} \
+    --validation_split_count ${VALIDATION_SPLIT_COUNT} \
+    --validation_split_seed ${VALIDATION_SPLIT_SEED} \
     --documents ${DOC_DIR} \
     --output_dir ${OUTPUT_DIR} \
     --batch_size ${BATCH_SIZE_PER_GPU} \
@@ -64,7 +74,7 @@ python -m torch.distributed.launch \
     --warmup_ratio 0.1 \
     --logging_steps 10 \
     --save_total_limit 3 \
-    --load_best_model_at_end True | tee -a ${OUTPUT_DIR}/training.log
+    --load_best_model_at_end | tee -a ${OUTPUT_DIR}/training.log
 
 # 训练完成后评估性能 (评估只需要单进程)
 echo "训练完成，开始评估..." | tee -a ${OUTPUT_DIR}/evaluation.log

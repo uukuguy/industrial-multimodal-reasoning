@@ -1,0 +1,142 @@
+# =============================================================================
+# 增强型多模态模型配置文件
+# =============================================================================
+
+# 模型总体配置
+model:
+  name: "IndustrialDocQA"
+  version: "1.0.0"
+  embedding_dim: 768
+  fusion_dim: 512
+  use_cache: true
+  device: "auto"  # "auto", "cpu", "cuda", "cuda:0"
+  use_reconstructor: false
+  use_uncertainty: false
+
+# 编码器配置
+encoders:
+  text:
+    model_name: "bert-base-chinese"
+    pooling_strategy: "cls"
+    max_length: 512
+    batch_size: 16
+  vision:
+    model_name: "google/vit-base-patch16-224"
+    image_size: 224
+    batch_size: 8
+    multiscale_fusion: true
+  layout:
+    feature_dim: 5
+    use_positional_encoding: true
+
+# 融合模块配置
+fusion:
+  strategy: "hierarchical"  # "simple", "attention", "hierarchical"
+  num_attention_heads: 8
+  dropout: 0.1
+  use_layer_norm: true
+
+# 问答模块配置
+qa_module:
+  model_name: "placeholder/lmm-model"
+  temperature: 1.0
+  max_answer_length: 100
+  confidence_threshold: 0.5
+  top_k: 1
+
+# 训练配置
+training:
+  # 基本训练参数
+  num_epochs: 10
+  batch_size: 8
+  gradient_accumulation_steps: 1
+  fp16: false  # 是否使用混合精度训练
+  
+  # 优化器配置
+  optimizer:
+    type: "AdamW"
+    learning_rate: 1e-4
+    weight_decay: 0.01
+    eps: 1e-8
+    betas: [0.9, 0.999]
+  
+  # 学习率调度器配置
+  scheduler:
+    type: "cosine"  # "linear", "cosine", "constant", "constant_with_warmup"
+    warmup_ratio: 0.1
+    warmup_steps: 0  # 如果设置了warmup_steps，则优先使用steps而非ratio
+  
+  # 评估配置
+  evaluation:
+    strategy: "epoch"  # "epoch", "steps", "no"
+    eval_steps: 500  # 如果strategy为"steps"，则每eval_steps步进行一次评估
+    metric: "accuracy"  # 主要评估指标
+    save_best: true  # 是否保存最佳模型
+    early_stopping: false  # 是否启用早停
+    patience: 3  # 早停耐心值
+  
+  # 检查点配置
+  checkpoint:
+    save_strategy: "epoch"  # "epoch", "steps", "no"
+    save_steps: 500  # 如果save_strategy为"steps"，则每save_steps步保存一次
+    save_total_limit: 3  # 最多保存的检查点数量
+    load_best_model_at_end: true  # 训练结束时是否加载最佳模型
+  
+  # 日志配置
+  logging:
+    steps: 50  # 每多少步记录一次日志
+    report_to: ["tensorboard"]  # "tensorboard", "wandb"
+    wandb:
+      project: "industrial-multimodal-qa"
+      name: null  # 如果为null，则使用输出目录名
+      entity: null  # 如果为null，则使用默认实体
+
+# PEFT配置（参数高效微调）
+peft:
+  use_peft: false
+  peft_technique: "lora"  # "lora", "prefix_tuning", "prompt_tuning", "ia3"
+  lora:
+    r: 8  # LoRA的秩
+    alpha: 16  # LoRA的缩放参数
+    dropout: 0.1
+    target_modules: ["query", "key", "value"]  # 要应用LoRA的模块名称
+  prefix_tuning:
+    num_virtual_tokens: 20
+    encoder_dropout: 0.1
+  prompt_tuning:
+    num_virtual_tokens: 20
+    prompt_dropout: 0.1
+
+# 数据增强配置
+data_augmentation:
+  use_data_augmentation: false
+  augmentation_factor: 1.5  # 增强后的数据量相对于原始数据量的比例
+  min_samples_per_type: 20  # 每种问题类型的最小样本数
+  techniques: ["synonym_replacement", "back_translation"]  # 使用的增强技术
+  seed: 42  # 随机种子，确保可复现性
+
+# 数据集划分配置
+dataset_split:
+  validation_split_ratio: 0.2  # 验证集划分比例，0-1之间的浮点数
+  validation_split_count: 0  # 验证集样本数量，整数，优先级高于比例参数
+  validation_split_seed: 42  # 数据集划分的随机种子，用于复现划分结果
+  stratified: true  # 是否使用分层采样进行划分
+
+# 损失函数配置
+loss:
+  use_optimized_loss: false  # 是否使用优化后的损失函数
+  label_smoothing: 0.1  # 标签平滑系数
+  class_weights: null  # 类别权重，如[1.0, 1.0, 1.0, 1.0]
+  focal_loss:
+    use_focal_loss: false
+    gamma: 2.0
+    alpha: 0.25
+
+# 系统配置
+system:
+  temp_dir: "temp_processed_data"
+  max_workers: 4
+  cache_dir: ".cache"
+  log_level: "INFO"  # "DEBUG", "INFO", "WARNING", "ERROR"
+  seed: 42  # 全局随机种子
+  deterministic: true  # 是否确保确定性行为

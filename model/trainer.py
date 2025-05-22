@@ -46,6 +46,7 @@ class EnhancedMultiModalTrainer(Trainer):
                 peft_config=None,
                 use_data_augmentation=False,
                 data_augmentation_config=None,
+                use_optimized_loss=False,
                 **kwargs):
         """
         初始化训练器
@@ -63,6 +64,7 @@ class EnhancedMultiModalTrainer(Trainer):
             peft_config: PEFT配置
             use_data_augmentation: 是否使用数据增强
             data_augmentation_config: 数据增强配置
+            use_optimized_loss: 是否使用优化后的损失函数
             **kwargs: 传递给父类的其他参数
         """
         # 如果未提供args，从config创建
@@ -99,6 +101,9 @@ class EnhancedMultiModalTrainer(Trainer):
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             logger.info(f"配置已保存到: {config_path}")
+        
+        # 存储是否使用优化损失的标志
+        self.use_optimized_loss = use_optimized_loss
         
         # 应用数据增强
         self.use_data_augmentation = use_data_augmentation and HAS_DATA_AUG
@@ -201,7 +206,21 @@ class EnhancedMultiModalTrainer(Trainer):
         answer = answers[0] if answers else ""
         
         # 损失计算逻辑
-        loss = self._compute_custom_loss(outputs, answer)
+        if self.use_optimized_loss:
+            logger.debug("使用优化后的损失函数")
+            loss = self._compute_custom_loss(outputs, answer)
+        else:
+            logger.debug("使用默认损失函数")
+            # 使用默认损失
+            if 'loss' in outputs:
+                loss = outputs['loss']
+            elif 'logits' in outputs and answer in ['A', 'B', 'C', 'D']:
+                target_idx = ord(answer) - ord('A')
+                target = torch.tensor(target_idx, device=self.model.device)
+                loss = torch.nn.functional.cross_entropy(outputs['logits'], target)
+            else:
+                # 如果没有明确的损失，使用默认值
+                loss = torch.tensor(0.0, requires_grad=True, device=self.model.device)
         
         return (loss, outputs) if return_outputs else loss
     
@@ -554,6 +573,7 @@ def create_trainer(
     peft_config=None,
     use_data_augmentation=False,
     data_augmentation_config=None,
+    use_optimized_loss=False,
     **kwargs
 ):
     """
@@ -570,6 +590,7 @@ def create_trainer(
         peft_config: PEFT配置
         use_data_augmentation: 是否使用数据增强
         data_augmentation_config: 数据增强配置
+        use_optimized_loss: 是否使用优化后的损失函数
         **kwargs: 其他参数
         
     Returns:
@@ -632,5 +653,6 @@ def create_trainer(
         peft_config=peft_config,
         use_data_augmentation=use_data_augmentation,
         data_augmentation_config=data_augmentation_config,
+        use_optimized_loss=use_optimized_loss,
         **kwargs
     )

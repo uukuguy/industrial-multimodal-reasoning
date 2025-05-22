@@ -86,7 +86,7 @@ class EnhancedMultiModalModel(nn.Module):
         encoder_config = self.config.get('encoders', {})
         model_config = self.config.get('model', {})
         
-        text_model = encoder_config.get('text', {}).get('model_name', 'bert-base-chinese')
+        text_model = encoder_config.get('text', {}).get('model_name', 'google/bert-base-chinese')
         vision_model = encoder_config.get('vision', {}).get('model_name', 'google/vit-base-patch16-224')
         
         # 其他编码器参数
@@ -156,7 +156,7 @@ class EnhancedMultiModalModel(nn.Module):
         qa_config = self.config.get('qa_module', {})
         model_config = self.config.get('model', {})
         
-        lmm_model_name = qa_config.get('model_name', 'placeholder/lmm-model')
+        lmm_model_name = qa_config.get('model_name', 'Qwen/Qwen3-4B')
         fusion_dim = model_config.get('fusion_dim', 512)
         temperature = qa_config.get('temperature', 1.0)
         confidence_threshold = qa_config.get('confidence_threshold', 0.7)
