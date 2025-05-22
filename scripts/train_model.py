@@ -38,12 +38,22 @@ from model import (
 # 配置日志
 logger = logging.getLogger("model_trainer")
 
-def prepare_datasets(args: argparse.Namespace) -> Tuple[Optional[MultimodalQuestionAnsweringDataset],
+def prepare_datasets(args: argparse.Namespace, config: Optional[Dict[str, Any]] = None) -> Tuple[Optional[MultimodalQuestionAnsweringDataset],
                                                        Optional[MultimodalQuestionAnsweringDataset],
                                                        Optional[MultimodalQuestionAnsweringDataset]]:
     """准备数据集，支持自动划分训练集和验证集"""
     import random
     from torch.utils.data import Subset, random_split
+    
+    # 获取数据集划分配置
+    dataset_split_config = {}
+    if config and 'dataset_split' in config:
+        dataset_split_config = config.get('dataset_split', {})
+    
+    # 确定验证集划分参数，优先使用命令行参数，其次使用配置文件
+    validation_split_ratio = args.validation_split_ratio
+    validation_split_count = args.validation_split_count
+    validation_split_seed = args.validation_split_seed
     
     # 训练集
     train_dataset = None
@@ -71,23 +81,23 @@ def prepare_datasets(args: argparse.Namespace) -> Tuple[Optional[MultimodalQuest
         # 如果没有提供验证集文件，但提供了划分参数，则自动划分
         elif len(full_dataset) > 1:
             # 设置随机种子以确保可复现性
-            random.seed(args.validation_split_seed)
-            torch.manual_seed(args.validation_split_seed)
+            random.seed(validation_split_seed)
+            torch.manual_seed(validation_split_seed)
             
             # 确定验证集大小
             valid_size = 0
             
             # 检查是否提供了样本数量参数且大于0
-            if args.validation_split_count is not None and args.validation_split_count > 0:
+            if validation_split_count is not None and validation_split_count > 0:
                 # 使用指定的样本数量（优先）
-                valid_size = min(args.validation_split_count, len(full_dataset) - 1)
+                valid_size = min(validation_split_count, len(full_dataset) - 1)
                 logger.info(f"使用指定的验证集样本数: {valid_size}")
             # 如果没有提供有效的样本数量，检查比例参数
-            elif args.validation_split_ratio is not None and args.validation_split_ratio > 0:
+            elif validation_split_ratio is not None and validation_split_ratio > 0:
                 # 使用指定的比例
-                valid_size = int(len(full_dataset) * args.validation_split_ratio)
+                valid_size = int(len(full_dataset) * validation_split_ratio)
                 valid_size = max(1, min(valid_size, len(full_dataset) - 1))  # 确保至少有1个样本，且不超过总数-1
-                logger.info(f"使用指定的验证集比例 {args.validation_split_ratio}: {valid_size} 个样本")
+                logger.info(f"使用指定的验证集比例 {validation_split_ratio}: {valid_size} 个样本")
             
             if valid_size > 0:
                 # 划分数据集
@@ -95,7 +105,7 @@ def prepare_datasets(args: argparse.Namespace) -> Tuple[Optional[MultimodalQuest
                 train_dataset, valid_dataset = random_split(
                     full_dataset,
                     [train_size, valid_size],
-                    generator=torch.Generator().manual_seed(args.validation_split_seed)
+                    generator=torch.Generator().manual_seed(validation_split_seed)
                 )
                 logger.info(f"数据集已划分: 训练集 {len(train_dataset)} 个样本, 验证集 {len(valid_dataset)} 个样本")
             else:
@@ -468,7 +478,7 @@ def main():
     update_config_from_args(config, args, report_to)
     
     # 准备数据集
-    train_dataset, valid_dataset, test_dataset = prepare_datasets(args)
+    train_dataset, valid_dataset, test_dataset = prepare_datasets(args, config)
     
     # 创建数据收集器
     data_collator = DataCollator.collate_fn
@@ -481,14 +491,15 @@ def main():
         logger.info("创建新模型")
         model = EnhancedMultiModalModel(**config)
     
-    # 创建训练参数
+    # 创建训练参数，优先使用配置文件中的值
+    training_config = config.get('training', {})
     training_args = {
-        "fp16": args.fp16,
-        "dataloader_num_workers": args.workers,
-        "gradient_accumulation_steps": args.gradient_accumulation_steps,
-        "logging_steps": args.logging_steps,
-        "save_total_limit": args.save_total_limit,
-        "load_best_model_at_end": args.load_best_model_at_end,
+        "fp16": training_config.get('fp16', args.fp16),
+        "dataloader_num_workers": args.workers,  # 工作进程数通常由系统环境决定，保留命令行参数
+        "gradient_accumulation_steps": training_config.get('gradient_accumulation_steps', args.gradient_accumulation_steps),
+        "logging_steps": training_config.get('logging', {}).get('steps', args.logging_steps),
+        "save_total_limit": training_config.get('checkpoint', {}).get('save_total_limit', args.save_total_limit),
+        "load_best_model_at_end": training_config.get('checkpoint', {}).get('load_best_model_at_end', args.load_best_model_at_end),
     }
     
     # 添加分布式训练参数
@@ -505,13 +516,13 @@ def main():
         eval_dataset=valid_dataset,
         output_dir=args.output_dir,
         data_collator=data_collator,
-        use_peft=args.use_peft,
-        peft_config=config.get('peft'), # Pass PEFT config from updated config
-        use_data_augmentation=args.use_data_augmentation,
-        # Pass data augmentation config if needed (currently not a command line arg)
-        # data_augmentation_config=config.get('data_augmentation'),
-        use_optimized_loss=args.use_optimized_loss,
-        training_args=training_args # Pass the collected training_args
+        # 使用配置文件中的值，如果不存在则使用命令行参数
+        use_peft=config.get('peft', {}).get('use_peft', args.use_peft),
+        peft_config=config.get('peft'),
+        use_data_augmentation=config.get('data_augmentation', {}).get('use_data_augmentation', args.use_data_augmentation),
+        data_augmentation_config=config.get('data_augmentation'),
+        use_optimized_loss=config.get('loss', {}).get('use_optimized_loss', args.use_optimized_loss),
+        training_args=training_args
     )
     
     # 训练模型或预测

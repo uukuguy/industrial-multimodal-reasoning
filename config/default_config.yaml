@@ -16,12 +16,12 @@ model:
 # 编码器配置
 encoders:
   text:
-    model_name: "bert-base-chinese"
+    model_name: "/opt/local/llm_models/huggingface.co/google/bert-base-chinese"
     pooling_strategy: "cls"
     max_length: 512
     batch_size: 16
   vision:
-    model_name: "google/vit-base-patch16-224"
+    model_name: "/opt/local/llm_models/huggingface.co/google/vit-base-patch16-224"
     image_size: 224
     batch_size: 8
     multiscale_fusion: true
@@ -38,7 +38,7 @@ fusion:
 
 # 问答模块配置
 qa_module:
-  model_name: "placeholder/lmm-model"
+  model_name: "/opt/local/llm_models/huggingface.co/Qwen/Qwen3-4B"
   temperature: 1.0
   max_answer_length: 100
   confidence_threshold: 0.5
@@ -117,8 +117,8 @@ data_augmentation:
 
 # 数据集划分配置
 dataset_split:
-  validation_split_ratio: 0.2  # 验证集划分比例，0-1之间的浮点数
-  validation_split_count: 0  # 验证集样本数量，整数，优先级高于比例参数
+  validation_split_ratio: 0.05  # 验证集划分比例，0-1之间的浮点数
+  validation_split_count: 20  # 验证集样本数量，整数，优先级高于比例参数
   validation_split_seed: 42  # 数据集划分的随机种子，用于复现划分结果
   stratified: true  # 是否使用分层采样进行划分
 
