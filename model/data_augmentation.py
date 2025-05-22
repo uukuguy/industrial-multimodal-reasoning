@@ -11,6 +11,16 @@ import json
 import random
 import numpy as np
 from typing import List, Dict, Any, Optional, Union, Tuple
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torchvision.transforms as T
+import cv2
+from PIL import Image
+import albumentations as A
+from transformers import AutoTokenizer
+import nlpaug.augmenter.word as naw
+import nlpaug.augmenter.char as nac
 
 # 尝试导入nlpaug库，用于文本增强
 try:
@@ -29,6 +39,208 @@ try:
 except ImportError:
     HAS_OPENAI = False
     
+class ImageAugmentation:
+    """图像增强"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.augmentation_config = config.get('image_augmentation', {})
+        
+        # 初始化图像增强pipeline
+        self.transform = A.Compose([
+            # 几何变换
+            A.RandomRotate90(p=0.5),
+            A.Flip(p=0.5),
+            A.ShiftScaleRotate(
+                shift_limit=0.0625,
+                scale_limit=0.1,
+                rotate_limit=45,
+                p=0.5
+            ),
+            
+            # 颜色变换
+            A.OneOf([
+                A.RandomBrightnessContrast(
+                    brightness_limit=0.2,
+                    contrast_limit=0.2,
+                    p=1.0
+                ),
+                A.RandomGamma(p=1.0),
+                A.HueSaturationValue(
+                    hue_shift_limit=20,
+                    sat_shift_limit=30,
+                    val_shift_limit=20,
+                    p=1.0
+                )
+            ], p=0.5),
+            
+            # 噪声和模糊
+            A.OneOf([
+                A.GaussNoise(p=1.0),
+                A.GaussianBlur(p=1.0),
+                A.MotionBlur(p=1.0)
+            ], p=0.5),
+            
+            # 图像质量
+            A.OneOf([
+                A.ImageCompression(quality_lower=60, quality_upper=100, p=1.0),
+                A.GridDistortion(p=1.0),
+                A.OpticalDistortion(p=1.0)
+            ], p=0.5)
+        ])
+    
+    def augment(self, image: np.ndarray) -> np.ndarray:
+        """增强图像"""
+        # 应用增强
+        augmented = self.transform(image=image)
+        return augmented['image']
+
+class TextAugmentation:
+    """文本增强"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.augmentation_config = config.get('text_augmentation', {})
+        
+        # 初始化文本增强器
+        self.word_aug = naw.SynonymAug(
+            aug_src='wordnet',
+            lang='eng'
+        )
+        
+        self.char_aug = nac.KeyboardAug(
+            aug_char_max=1,
+            aug_word_max=1
+        )
+        
+        # 初始化分词器
+        self.tokenizer = AutoTokenizer.from_pretrained(
+            self.augmentation_config.get('tokenizer_name', 'bert-base-chinese')
+        )
+    
+    def augment(self, text: str) -> str:
+        """增强文本"""
+        # 随机选择增强方法
+        aug_method = random.choice(['synonym', 'keyboard', 'back_translation'])
+        
+        if aug_method == 'synonym':
+            # 同义词替换
+            augmented = self.word_aug.augment(text)
+        elif aug_method == 'keyboard':
+            # 键盘错误模拟
+            augmented = self.char_aug.augment(text)
+        else:
+            # 回译
+            augmented = self._back_translate(text)
+        
+        return augmented[0] if isinstance(augmented, list) else augmented
+    
+    def _back_translate(self, text: str) -> str:
+        """回译增强"""
+        # 这里需要实现回译逻辑
+        # 可以使用翻译API或预训练模型
+        return text
+
+class MixedAugmentation:
+    """混合增强"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.mixed_config = config.get('mixed_augmentation', {})
+        
+        # 初始化图像和文本增强器
+        self.image_aug = ImageAugmentation(config)
+        self.text_aug = TextAugmentation(config)
+        
+        # 混合增强概率
+        self.mix_prob = self.mixed_config.get('mix_prob', 0.5)
+    
+    def augment(self, image: np.ndarray, text: str) -> Tuple[np.ndarray, str]:
+        """混合增强"""
+        # 随机决定是否进行混合增强
+        if random.random() < self.mix_prob:
+            # 增强图像
+            augmented_image = self.image_aug.augment(image)
+            
+            # 增强文本
+            augmented_text = self.text_aug.augment(text)
+            
+            return augmented_image, augmented_text
+        
+        return image, text
+
+class CurriculumAugmentation:
+    """课程学习增强"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.curriculum_config = config.get('curriculum_augmentation', {})
+        
+        # 初始化基础增强器
+        self.base_aug = MixedAugmentation(config)
+        
+        # 课程学习参数
+        self.max_epochs = self.curriculum_config.get('max_epochs', 100)
+        self.current_epoch = 0
+        
+        # 增强强度
+        self.min_strength = self.curriculum_config.get('min_strength', 0.1)
+        self.max_strength = self.curriculum_config.get('max_strength', 1.0)
+    
+    def set_epoch(self, epoch: int):
+        """设置当前epoch"""
+        self.current_epoch = epoch
+    
+    def augment(self, image: np.ndarray, text: str) -> Tuple[np.ndarray, str]:
+        """课程学习增强"""
+        # 计算当前增强强度
+        progress = min(self.current_epoch / self.max_epochs, 1.0)
+        strength = self.min_strength + (self.max_strength - self.min_strength) * progress
+        
+        # 应用基础增强
+        augmented_image, augmented_text = self.base_aug.augment(image, text)
+        
+        # 根据强度调整增强结果
+        if random.random() < strength:
+            return augmented_image, augmented_text
+        
+        return image, text
+
+class AdaptiveAugmentation:
+    """自适应增强"""
+    
+    def __init__(self, config: Dict):
+        self.config = config
+        self.adaptive_config = config.get('adaptive_augmentation', {})
+        
+        # 初始化基础增强器
+        self.base_aug = MixedAugmentation(config)
+        
+        # 自适应参数
+        self.performance_threshold = self.adaptive_config.get('performance_threshold', 0.8)
+        self.strength_increase = self.adaptive_config.get('strength_increase', 0.1)
+        self.strength_decrease = self.adaptive_config.get('strength_decrease', 0.05)
+        
+        # 当前增强强度
+        self.current_strength = self.adaptive_config.get('initial_strength', 0.5)
+    
+    def update_strength(self, performance: float):
+        """更新增强强度"""
+        if performance < self.performance_threshold:
+            # 性能低于阈值，降低增强强度
+            self.current_strength = max(0.1, self.current_strength - self.strength_decrease)
+        else:
+            # 性能高于阈值，提高增强强度
+            self.current_strength = min(1.0, self.current_strength + self.strength_increase)
+    
+    def augment(self, image: np.ndarray, text: str) -> Tuple[np.ndarray, str]:
+        """自适应增强"""
+        # 根据当前强度决定是否进行增强
+        if random.random() < self.current_strength:
+            return self.base_aug.augment(image, text)
+        
+        return image, text
+
 class DataAugmentation:
     """数据增强类，提供多种增强方法"""
     

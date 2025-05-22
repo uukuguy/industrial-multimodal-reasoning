@@ -20,14 +20,63 @@ encoders:
     pooling_strategy: "cls"
     max_length: 512
     batch_size: 16
+    # OCR增强配置
+    ocr_enhancement:
+      use_paddleocr: true
+      use_easyocr: true
+      use_advanced_preprocessing: true
+      confidence_threshold: 0.6
+      post_process: true
+      language: ["ch_sim", "en"]
+      use_gpu: true
+      det_model_dir: "models/ch_PP-OCRv4_det_infer"
+      rec_model_dir: "models/ch_PP-OCRv4_rec_infer"
+      cls_model_dir: "models/ch_ppocr_mobile_v2.0_cls_infer"
+
   vision:
-    model_name: "/opt/local/llm_models/huggingface.co/google/vit-base-patch16-224"
-    image_size: 224
+    model_name: "microsoft/resnet-50"
+    image_size: 384
     batch_size: 8
     multiscale_fusion: true
+    # 图像预处理增强
+    preprocessing:
+      enhance_contrast: true
+      denoise: true
+      sharpen: true
+      adaptive_threshold: true
+      gaussian_blur: true
+      bilateral_filter: true
+    # 特征提取增强
+    feature_extraction:
+      use_fpn: true
+      use_attention: true
+      use_roi_align: true
+      fpn_channels: [256, 512, 1024, 2048]
+      roi_size: 7
+      attention_heads: 8
+
   layout:
     feature_dim: 5
     use_positional_encoding: true
+    # 版面分析增强
+    enhanced_layout:
+      detect_arrows: true
+      detect_text_boxes: true
+      detect_connected_components: true
+      use_graph_conv: true
+      spatial_relation: true
+      arrow_detection:
+        min_length: 10
+        max_length: 100
+        angle_threshold: 30
+      text_box_detection:
+        min_area: 100
+        max_area: 10000
+        aspect_ratio_threshold: 0.2
+      graph_conv:
+        num_layers: 3
+        hidden_dim: 256
+        dropout: 0.1
 
 # 融合模块配置
 fusion:
@@ -35,27 +84,35 @@ fusion:
   num_attention_heads: 8
   dropout: 0.1
   use_layer_norm: true
-
-# 问答模块配置
-qa_module:
-  model_name: "/opt/local/llm_models/huggingface.co/Qwen/Qwen3-4B"
-  temperature: 1.0
-  max_answer_length: 100
-  confidence_threshold: 0.5
-  top_k: 1
+  # 融合增强
+  enhanced_fusion:
+    use_graph_attention: true
+    use_relation_aware: true
+    use_cross_modal_attention: true
+    use_spatial_attention: true
+    graph_attention:
+      num_layers: 2
+      hidden_dim: 256
+      num_heads: 4
+    relation_aware:
+      num_relations: 8
+      relation_dim: 64
+    spatial_attention:
+      grid_size: 8
+      use_relative_position: true
 
 # 训练配置
 training:
   # 基本训练参数
-  num_epochs: 10
-  batch_size: 6
-  gradient_accumulation_steps: 2
-  fp16: true  # 使用混合精度训练
+  num_epochs: 15
+  batch_size: 16
+  gradient_accumulation_steps: 1
+  fp16: true
   
   # 优化器配置
   optimizer:
     type: "AdamW"
-    learning_rate: 3e-5
+    learning_rate: 5e-5
     weight_decay: 0.01
     eps: 1e-8
     betas: [0.9, 0.999]
@@ -79,10 +136,28 @@ training:
   
   # 日志配置
   logging:
-    steps: 10
+    steps: 20
     report_to: ["tensorboard"]
 
-# PEFT配置（参数高效微调）
+  # 训练策略优化
+  enhanced_training:
+    use_curriculum_learning: true
+    use_mixup: true
+    use_cutmix: true
+    use_label_smoothing: true
+    use_gradient_clipping: true
+    max_grad_norm: 1.0
+    curriculum_learning:
+      stages: 3
+      difficulty_increase: 0.3
+    mixup:
+      alpha: 0.2
+      mix_prob: 0.5
+    cutmix:
+      alpha: 1.0
+      cut_prob: 0.5
+
+# PEFT配置
 peft:
   use_peft: true
   peft_technique: "lora"
@@ -95,15 +170,31 @@ peft:
 # 数据增强配置
 data_augmentation:
   use_data_augmentation: true
-  augmentation_factor: 1.5
+  augmentation_factor: 2.0
   min_samples_per_type: 20
-  techniques: ["synonym_replacement", "back_translation"]
+  techniques: 
+    - "synonym_replacement"
+    - "back_translation"
+    - "random_masking"
+    - "image_rotation"
+    - "image_noise"
+    - "image_blur"
+    - "contrast_adjustment"
+    - "brightness_adjustment"
   seed: 42
+  image_augmentation:
+    rotation_range: 15
+    width_shift_range: 0.1
+    height_shift_range: 0.1
+    brightness_range: [0.8, 1.2]
+    contrast_range: [0.8, 1.2]
+    noise_factor: 0.05
+    blur_range: [0, 2]
 
 # 数据集划分配置
 dataset_split:
-  validation_split_ratio: 0.05
-  validation_split_count: 20  # 优先使用样本数量
+  validation_split_ratio: 0.1
+  validation_split_count: 20
   validation_split_seed: 42
   stratified: true
 
@@ -114,6 +205,38 @@ loss:
   focal_loss:
     use_focal_loss: true
     gamma: 2.0
+  # 新增损失函数
+  additional_losses:
+    use_contrastive_loss: true
+    use_triplet_loss: true
+    use_relation_loss: true
+    use_reconstruction_loss: true
+    contrastive_loss:
+      temperature: 0.07
+      margin: 1.0
+    triplet_loss:
+      margin: 0.3
+      mining_strategy: "hard"
+    relation_loss:
+      weight: 0.1
+    reconstruction_loss:
+      weight: 0.1
+
+# 后处理配置
+post_processing:
+  use_ensemble: true
+  use_confidence_thresholding: true
+  use_relation_constraints: true
+  use_spatial_constraints: true
+  use_ocr_correction: true
+  confidence_threshold: 0.7
+  ensemble:
+    num_models: 3
+    voting_strategy: "weighted"
+  ocr_correction:
+    use_dictionary: true
+    use_context: true
+    max_edit_distance: 2
 
 # 系统配置
 system:
@@ -130,3 +253,5 @@ data:
   documents_dir: "data/raw_data/train/documents"
   processed_data_dir: "data/processed"
   output_dir: "outputs"
+  ocr_models_dir: "models/ocr"
+  pretrained_models_dir: "models/pretrained"
