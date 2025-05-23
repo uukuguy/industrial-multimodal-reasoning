@@ -16,10 +16,39 @@ from .modality_reconstructor import ModalityReconstructor
 from .uncertainty_estimator import UncertaintyEstimator
 from .qa_module import ReasoningQAModule, EnhancedReasoningQAModule
 from .model import EnhancedMultimodalModel
-from .config import load_config, save_config, init_config
+from .config import load_config, save_config, init_config, ModelConfig
 
 # 导出训练相关模块
 from .dataset import MultimodalQuestionAnsweringDataset, DocumentTransforms, DataCollator
 from .trainer import EnhancedMultiModalTrainer, create_trainer
 
+from .core.factory import ModelFactory
+from .core.metrics import Metrics
+from .core.utils import (
+    set_seed,
+    get_device,
+    move_to_device,
+    save_checkpoint,
+    load_checkpoint,
+    count_parameters,
+    freeze_parameters,
+    unfreeze_parameters,
+    get_grad_norm
+)
+
 __version__ = "1.0.0"
+
+__all__ = [
+    'ModelConfig',
+    'ModelFactory',
+    'Metrics',
+    'set_seed',
+    'get_device',
+    'move_to_device',
+    'save_checkpoint',
+    'load_checkpoint',
+    'count_parameters',
+    'freeze_parameters',
+    'unfreeze_parameters',
+    'get_grad_norm'
+]

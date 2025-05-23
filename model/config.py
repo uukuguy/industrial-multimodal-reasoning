@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional, Union
 from dataclasses import dataclass, field
 from pathlib import Path
+import torch
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -18,20 +19,82 @@ DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "
 @dataclass
 class ModelConfig:
     """模型配置类"""
-    model_name: str
-    embedding_dim: int = 512
-    temperature: float = 1.0
-    confidence_threshold: float = 0.7
-    max_answer_length: int = 100
-    top_k: int = 5
-    use_peft: bool = False
-    peft_config: Dict[str, Any] = field(default_factory=dict)
-    use_data_augmentation: bool = False
-    data_augmentation_config: Dict[str, Any] = field(default_factory=dict)
-    use_optimized_loss: bool = False
-    device: str = "auto"
-    dtype: str = "float16"
-    cache_dir: Optional[str] = None
+    
+    # 基础配置
+    model_name: str = "enhanced_multimodal_model"
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
+    seed: int = 42
+    
+    # 文本编码器配置
+    text_encoder: str = "bert"  # bert, roberta
+    text_model_name: str = "bert-base-chinese"
+    text_hidden_size: int = 768
+    text_max_length: int = 512
+    text_dropout: float = 0.1
+    
+    # 图像编码器配置
+    image_encoder: str = "resnet"  # resnet, efficientnet
+    image_model_name: str = "resnet50"
+    image_hidden_size: int = 2048
+    image_dropout: float = 0.1
+    
+    # 布局编码器配置
+    layout_encoder: str = "transformer"  # transformer, graph
+    layout_hidden_size: int = 768
+    layout_num_layers: int = 6
+    layout_num_heads: int = 8
+    layout_dropout: float = 0.1
+    
+    # 特征融合配置
+    fusion_type: str = "attention"  # attention, concat, gate
+    fusion_hidden_size: int = 768
+    fusion_num_heads: int = 8
+    fusion_dropout: float = 0.1
+    
+    # 输出头配置
+    head_type: str = "classification"  # classification, regression
+    num_classes: int = 2
+    head_hidden_size: int = 768
+    head_dropout: float = 0.1
+    
+    # 训练配置
+    learning_rate: float = 1e-4
+    weight_decay: float = 0.01
+    warmup_ratio: float = 0.1
+    max_epochs: int = 100
+    batch_size: int = 32
+    gradient_clip_val: float = 1.0
+    
+    # 损失函数配置
+    loss_type: str = "cross_entropy"  # cross_entropy, mse
+    label_smoothing: float = 0.1
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """将配置转换为字典"""
+        return {
+            key: value for key, value in self.__dict__.items()
+            if not key.startswith('_')
+        }
+    
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'ModelConfig':
+        """从字典创建配置实例"""
+        return cls(**config_dict)
+    
+    def update(self, **kwargs) -> None:
+        """更新配置参数"""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Unknown config parameter: {key}")
+    
+    def __str__(self) -> str:
+        """返回配置的字符串表示"""
+        config_str = "Model Configuration:\n"
+        for key, value in self.to_dict().items():
+            config_str += f"{key}: {value}\n"
+        return config_str
 
 @dataclass
 class TrainingConfig:

@@ -849,11 +849,25 @@ python scripts/train_model.py \
 # 使用YAML配置的单机多卡训练
 bash scripts/train_multi_gpu_yaml.sh
 
-# 简单的YAML配置训练示例
+# 简单的YAML配置训练示例（适合入门）
 bash examples/train_with_yaml.sh
 ```
 
-详细说明请参考[YAML配置系统使用指南](docs/yaml_configuration_guide.md)。
+这些脚本包括完整的训练流程配置，包括：
+- 自动创建带时间戳的输出目录
+- 详细的日志记录
+- 训练后的模型评估
+- 优化的超参数设置
+
+命令行参数版本和YAML配置版本的主要区别：
+- 命令行参数版本：通过脚本中的变量和命令行参数控制训练
+- YAML配置版本：通过YAML配置文件控制大部分训练参数，更灵活和可维护
+
+多节点训练脚本支持丰富的配置选项：
+```bash
+bash scripts/train_multi_node.sh --help
+```
+```
 
 #### 3.4 分布式训练
 
@@ -1339,3 +1353,95 @@ industrial-multimodal-reasoning/
 1. **梯度检查点**：若显存紧张，可启用梯度检查点（`gradient_checkpointing=True`）。
 2. **动态批量化**：根据样本长度动态调整批量大小，进一步提升显存利用率。
 3. **数据预取**：使用`DataLoader`的`prefetch_factor`参数，提升数据加载效率。
+
+## 多模态融合策略
+
+本项目实现了多种多模态融合策略，包括：
+
+1. 简单拼接（Concat）
+   - 将不同模态的特征直接拼接
+   - 适用于模态间关系简单的情况
+
+2. 注意力融合（Attention）
+   - 使用多头注意力机制
+   - 将第一个模态作为查询，其他模态作为键和值
+   - 支持注意力掩码
+
+3. 交叉注意力（Cross Attention）
+   - 对每对模态进行交叉注意力计算
+   - 支持注意力掩码
+   - 适用于模态间需要深度交互的情况
+
+4. 门控融合（Gated）
+   - 使用门控机制控制不同模态的贡献
+   - 支持多种门控激活函数（sigmoid、tanh、relu）
+   - 适用于需要动态调整模态权重的情况
+
+5. 双线性融合（Bilinear）
+   - 使用双线性层进行模态交互
+   - 适用于需要捕获模态间复杂关系的情况
+
+6. Tucker分解融合（Tucker）
+   - 使用Tucker分解进行多模态融合
+   - 支持降维和特征提取
+   - 适用于高维特征融合
+
+### 配置选项
+
+融合策略可以通过 `FusionConfig` 进行配置：
+
+```python
+config = FusionConfig(
+    fusion_type="attention",  # 融合类型
+    hidden_size=768,         # 隐藏层大小
+    dropout=0.1,             # Dropout率
+    num_heads=8,             # 注意力头数
+    attention_dropout=0.1,   # 注意力Dropout率
+    use_layer_norm=True,     # 是否使用层归一化
+    use_residual=True,       # 是否使用残差连接
+    tucker_rank=32,          # Tucker分解的秩
+    gating_type="sigmoid"    # 门控激活函数类型
+)
+```
+
+### 使用示例
+
+```python
+# 创建融合模块
+fusion = MultiModalFusion(config)
+
+# 准备模态特征
+text_features = ...  # 文本特征
+image_features = ...  # 图像特征
+audio_features = ...  # 音频特征
+
+# 进行融合
+fused_features = fusion(
+    text_features,
+    image_features,
+    audio_features,
+    attention_mask=attention_mask  # 可选
+)
+```
+
+### 特点
+
+1. 灵活性
+   - 支持多种融合策略
+   - 可配置的模型参数
+   - 支持任意数量的模态输入
+
+2. 可扩展性
+   - 易于添加新的融合策略
+   - 支持自定义融合逻辑
+   - 模块化设计
+
+3. 性能优化
+   - 支持注意力掩码
+   - 支持批处理
+   - 支持GPU加速
+
+4. 训练稳定性
+   - 支持层归一化
+   - 支持残差连接
+   - 支持Dropout正则化
