@@ -1,0 +1,154 @@
+# Model Configuration
+model:
+  # Text Encoder
+  text_encoder:
+    name: "bert"
+    model_name: "bert-base-chinese"
+    max_length: 512
+    dropout: 0.1
+    batch_size: 16
+    use_cache: true
+
+  # Image Encoder
+  image_encoder:
+    name: "resnet"
+    model_name: "resnet50"
+    pretrained: true
+    dropout: 0.1
+    batch_size: 16
+    use_cache: true
+
+  # Layout Encoder
+  layout_encoder:
+    name: "layoutlm"
+    model_name: "microsoft/layoutlm-base-uncased"
+    input_dim: 768
+    hidden_dim: 512
+    num_layers: 2
+    dropout: 0.1
+    batch_size: 16
+    use_cache: true
+
+  # OCR Encoder
+  ocr_encoder:
+    name: "table-transformer"
+    model_name: "microsoft/table-transformer-detection"
+    batch_size: 16
+    use_cache: true
+
+  # Fusion Module
+  fusion:
+    name: "hierarchical"
+    type: "hierarchical"  # simple, hierarchical, attention
+    input_dims:
+      text: 768
+      image: 2048
+      layout: 512
+    output_dim: 512
+    hidden_dims: [768, 384, 192]
+    num_heads: 8
+    dropout: 0.1
+    use_attention: true
+
+  # Output Head
+  head:
+    name: "classification"
+    input_dim: 512
+    num_classes: 4
+    dropout: 0.1
+
+  # QA Module
+  qa:
+    model_name: "Qwen/Qwen3-4B"
+    max_answer_length: 100
+    temperature: 1.0
+    confidence_threshold: 0.7
+    top_k: 5
+
+  # Uncertainty Estimation
+  uncertainty:
+    use_uncertainty: true
+    num_samples: 10
+    dropout: 0.1
+    uncertainty_weight: 0.1
+
+# Training Configuration
+training:
+  # Optimizer
+  optimizer:
+    name: "adamw"
+    learning_rate: 2e-5
+    weight_decay: 0.01
+    beta1: 0.9
+    beta2: 0.999
+    eps: 1e-8
+
+  # Scheduler
+  scheduler:
+    name: "linear"
+    warmup_steps: 1000
+    max_steps: 100000
+
+  # Training Parameters
+  batch_size: 32
+  num_epochs: 10
+  gradient_accumulation_steps: 4
+  max_grad_norm: 1.0
+  seed: 42
+  fp16: true
+  output_dir: "outputs"
+  save_total_limit: 3
+  load_best_model_at_end: true
+  metric_for_best_model: "accuracy"
+  greater_is_better: true
+
+# Optimization Configuration
+optimization:
+  computation:
+    use_mixed_precision: true
+    use_gradient_checkpointing: true
+    use_torch_compile: true
+    num_workers: 4
+    pin_memory: true
+  
+  memory:
+    use_gradient_accumulation: true
+    gradient_accumulation_steps: 4
+    use_gradient_clipping: true
+    max_grad_norm: 1.0
+    use_memory_efficient_attention: true
+  
+  batch_size:
+    initial_batch_size: 32
+    target_throughput: 100.0
+    target_latency: 0.1
+    max_batch_size: 128
+    min_batch_size: 1
+
+# Data Configuration
+data:
+  train_file: "data/train.json"
+  eval_file: "data/eval.json"
+  image_dir: "data/images"
+  num_workers: 4
+  pin_memory: true
+
+# Evaluation Configuration
+evaluation:
+  batch_size: 32
+  num_beams: 4
+  max_length: 100
+  temperature: 1.0
+  top_k: 50
+  top_p: 0.95
+  repetition_penalty: 1.0
+  length_penalty: 1.0
+  no_repeat_ngram_size: 3
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  log_dir: "logs"
+  log_interval: 100
+  eval_interval: 1000
+  save_interval: 1000 
